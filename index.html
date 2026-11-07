@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EchoVocab 靈語單字 — 智慧 AI 個性化英文學習系統</title>
+  <link rel="icon" type="image/png" href="Logo.png">
+  <title>EchoVocab 靈語單字</title>
   
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -31,9 +32,16 @@
     }
   </script>
 
-  <!-- Lucide Icons & Canvas Confetti -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- 本地原生向量圖示庫 (零外部網路依賴，保證100%圖示秒載入) -->
+  <script src="icons.js"></script>
+  <!-- Canvas Confetti 慶祝特效 (含離線防護) -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <script>
+    // 離線防護：若 CDN 遭攔截，提供安全空函數避免中斷執行
+    if (typeof confetti === 'undefined') {
+      window.confetti = function() {};
+    }
+  </script>
 
   <!-- 自訂 CSS 樣式 -->
   <link rel="stylesheet" href="style.css">
@@ -49,9 +57,7 @@
   <header class="sticky top-0 z-40 w-full glass-panel border-b border-slate-200/80 dark:border-slate-800/80 px-4 sm:px-8 py-3.5 flex items-center justify-between">
     <!-- Logo 品牌 -->
     <div class="flex items-center gap-3 cursor-pointer" onclick="switchView('dashboard')">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-sky-400 flex items-center justify-center text-white shadow-md shadow-indigo-500/25">
-        <i data-lucide="sparkles" class="w-5 h-5"></i>
-      </div>
+      <img src="Logo.png" alt="EchoVocab Logo" class="w-10 h-10 rounded-xl object-cover shadow-md shadow-indigo-500/25">
       <div>
         <h1 class="text-lg font-extrabold tracking-tight bg-gradient-to-r from-indigo-600 to-sky-500 bg-clip-text text-transparent">EchoVocab</h1>
         <p class="text-[11px] text-slate-400 font-medium">靈語單字・智慧 AI 記憶庫</p>
@@ -75,11 +81,11 @@
       <button data-nav-target="spelling" class="flex items-center gap-2 px-3.5 py-1.5 rounded-xl transition-all">
         <i data-lucide="spell-check" class="w-4 h-4"></i> 拼字挑戰
       </button>
+      <button data-nav-target="listening" class="flex items-center gap-2 px-3.5 py-1.5 rounded-xl transition-all text-sky-600 dark:text-sky-400">
+        <i data-lucide="headphones" class="w-4 h-4"></i> 聽力盲測
+      </button>
       <button data-nav-target="ai-lab" class="flex items-center gap-2 px-3.5 py-1.5 rounded-xl transition-all text-amber-600 dark:text-amber-400">
         <i data-lucide="bot" class="w-4 h-4"></i> AI 實戰工坊
-      </button>
-      <button data-nav-target="data" class="flex items-center gap-2 px-3.5 py-1.5 rounded-xl transition-all">
-        <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> CSV 資料中心
       </button>
     </nav>
 
@@ -259,14 +265,17 @@
     <section id="view-add" class="app-view hidden max-w-2xl mx-auto space-y-6">
       <div class="glass-panel rounded-2xl shadow-sm overflow-hidden">
         <!-- 頂部 Tab 選單 -->
-        <div class="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
-          <button id="tab-btn-ai" class="flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 transition">
-            <i data-lucide="sparkles" class="w-4 h-4"></i> Gemini AI 智能解析
+        <div class="flex flex-wrap border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+          <button id="tab-btn-ai" class="flex-1 py-3 px-2 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 transition whitespace-nowrap">
+            <i data-lucide="sparkles" class="w-4 h-4"></i> AI 智能解析
           </button>
-          <button id="tab-btn-theme" class="flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 transition">
+          <button id="tab-btn-ocr" class="flex-1 py-3 px-2 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-700 dark:text-slate-400 transition whitespace-nowrap">
+            <i data-lucide="camera" class="w-4 h-4"></i> 截圖/照片提詞
+          </button>
+          <button id="tab-btn-theme" class="flex-1 py-3 px-2 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-700 dark:text-slate-400 transition whitespace-nowrap">
             <i data-lucide="compass" class="w-4 h-4"></i> 情境主題擴充
           </button>
-          <button id="tab-btn-manual" class="flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 transition">
+          <button id="tab-btn-manual" class="flex-1 py-3 px-2 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-700 dark:text-slate-400 transition whitespace-nowrap">
             <i data-lucide="pencil" class="w-4 h-4"></i> 手動自訂新增
           </button>
         </div>
@@ -289,6 +298,33 @@
               <i data-lucide="sparkles" class="w-4 h-4"></i>
               <span>開始 Gemini AI 智能解析並存入單字庫</span>
               <div id="ai-spinner" class="hidden animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent ml-2"></div>
+            </button>
+          </div>
+
+          <!-- 1.5 圖片/截圖 OCR 提詞 -->
+          <div id="section-ocr-add" class="hidden space-y-5">
+            <div>
+              <label class="block text-sm font-semibold mb-1.5">上傳或貼上圖片 (支援直接按 Ctrl+V 貼上截圖)</label>
+              <div id="ocr-drop-zone" class="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-6 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/20 transition-all relative">
+                <input type="file" id="ocr-file-input" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
+                <div id="ocr-placeholder">
+                  <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-2">
+                    <i data-lucide="image-plus" class="w-6 h-6"></i>
+                  </div>
+                  <h4 class="text-sm font-bold text-slate-800 dark:text-slate-200">點擊上傳、拖曳圖片或直接 Ctrl+V 貼上</h4>
+                  <p class="text-xs text-slate-400 mt-1">支援看美劇截圖、英文書籍拍照、文章截圖</p>
+                </div>
+                <div id="ocr-preview-container" class="hidden">
+                  <img id="ocr-preview-img" src="" alt="圖片預覽" class="max-h-48 mx-auto rounded-xl shadow-md mb-2 object-contain">
+                  <p class="text-xs text-indigo-600 font-semibold">圖片已就緒，點擊下方按鈕開始 AI 辨識</p>
+                </div>
+              </div>
+            </div>
+
+            <button id="btn-ocr-submit" class="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-700 hover:to-sky-700 text-white font-bold text-sm flex items-center justify-center gap-2 transition shadow-lg shadow-indigo-600/25">
+              <i data-lucide="sparkles" class="w-4 h-4"></i>
+              <span>透過 Gemini 視覺 AI 提取重點生詞卡</span>
+              <div id="ocr-spinner" class="hidden animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent ml-2"></div>
             </button>
           </div>
 
@@ -451,7 +487,7 @@
       </div>
 
       <!-- SRS 打分按鈕列 (SM-2 艾賓浩斯記憶法) -->
-      <div class="grid grid-cols-4 gap-3 pt-2">
+      <div id="flashcard-srs-buttons" class="grid grid-cols-4 gap-3 pt-2">
         <button onclick="submitSRSGrade(1)" class="py-3 px-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 font-bold text-xs sm:text-sm flex flex-col items-center gap-1 transition">
           <span>忘記了 [1]</span>
           <span class="text-[10px] font-normal text-rose-500">1天後重試</span>
@@ -569,6 +605,66 @@
       </div>
     </section>
 
+    <!-- ================= 視圖 5.5: 聽力盲測模式 (Listening Challenge) ================= -->
+    <section id="view-listening" class="app-view hidden max-w-xl mx-auto space-y-6">
+      <div class="glass-panel p-6 sm:p-8 rounded-3xl shadow-xl space-y-6 relative" id="listening-card">
+        <!-- 頂部計分 -->
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400">
+              聽力測驗: <span id="listening-progress">1 / 10</span>
+            </span>
+            <span class="text-xs text-slate-400">專治「看懂但聽不懂」</span>
+          </div>
+          <div class="text-sm font-black text-sky-600 dark:text-sky-400">
+            連續答對: <span id="listening-combo">0</span>
+          </div>
+        </div>
+
+        <!-- 聽力核心播放區 -->
+        <div class="text-center py-6 space-y-4">
+          <div class="w-24 h-24 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-600 text-white flex items-center justify-center mx-auto shadow-xl shadow-sky-500/25 cursor-pointer hover:scale-105 active:scale-95 transition-transform" onclick="playListeningAudio()" title="點擊重聽發音">
+            <i data-lucide="volume-2" class="w-10 h-10"></i>
+          </div>
+
+          <div class="flex items-center justify-center gap-2">
+            <div class="sound-wave">
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+            </div>
+            <span class="text-xs font-medium text-slate-500">點擊大圓按鈕可重聽</span>
+          </div>
+
+          <p class="text-xs text-slate-400">請根據聽到的單字發音，選出正確的中文繁體釋義：</p>
+        </div>
+
+        <!-- 四選一按鈕 -->
+        <div id="listening-options" class="grid grid-cols-1 gap-3">
+          <!-- JS 動態生成選項 -->
+        </div>
+
+        <!-- 揭曉答案提示 -->
+        <div id="listening-reveal" class="hidden text-center p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 text-sm font-bold">
+        </div>
+      </div>
+
+      <!-- 聽力結算完成卡片 -->
+      <div id="listening-finished" class="hidden glass-panel p-8 rounded-3xl text-center space-y-4 shadow-xl">
+        <div class="w-16 h-16 rounded-3xl bg-sky-100 dark:bg-sky-900/60 text-sky-500 flex items-center justify-center mx-auto text-2xl">
+          🎧
+        </div>
+        <h3 class="text-2xl font-black text-slate-900 dark:text-white">聽力耳朵已打通！</h3>
+        <p class="text-sm text-slate-500">太棒了，完成所有聽力盲測題目！耳朵越來越靈敏！</p>
+        <div class="pt-4 flex justify-center gap-3">
+          <button onclick="switchView('dashboard')" class="px-5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-200 transition">返回總覽</button>
+          <button onclick="initListeningMode()" class="px-5 py-2.5 rounded-xl bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700 transition">再測一輪</button>
+        </div>
+      </div>
+    </section>
+
     <!-- ================= 視圖 6: AI 實戰工坊 (AI Sentence & Story Lab) ================= -->
     <section id="view-ai-lab" class="app-view hidden space-y-8">
       <!-- 標題說明 -->
@@ -681,100 +777,6 @@
       </div>
     </section>
 
-    <!-- ================= 視圖 7: CSV 資料中心 (Data Import/Export) ================= -->
-    <section id="view-data" class="app-view hidden max-w-3xl mx-auto space-y-6">
-      <div class="glass-panel p-6 sm:p-8 rounded-2xl space-y-6 shadow-sm">
-        <div>
-          <h2 class="text-xl font-bold flex items-center gap-2">
-            <i data-lucide="file-spreadsheet" class="w-5 h-5 text-indigo-600"></i>
-            CSV 資料匯入與匯出中心
-          </h2>
-          <p class="text-xs text-slate-500 mt-1">完全相容 Excel、Google 試算表、Anki，內建繁體中文 UTF-8 BOM 修正，開啟絕無亂碼！</p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- 匯出按鈕卡片 -->
-          <div class="p-5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-900/60 flex flex-col justify-between space-y-4">
-            <div>
-              <div class="flex items-center gap-2 font-bold text-indigo-900 dark:text-indigo-300 mb-1">
-                <i data-lucide="download" class="w-4 h-4"></i> 匯出 CSV 單字檔
-              </div>
-              <p class="text-xs text-slate-500 dark:text-slate-400">將你的所有單字、音標、詞性、例句、記憶口訣及 SRS 學習進度一鍵下載備份。</p>
-            </div>
-            <button id="btn-export-csv" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition shadow-md shadow-indigo-600/20">
-              <i data-lucide="file-down" class="w-4 h-4"></i> 立即匯出 UTF-8 CSV
-            </button>
-          </div>
-
-          <!-- 範例 CSV 與 JSON 備份 -->
-          <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex flex-col justify-between space-y-4">
-            <div>
-              <div class="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-200 mb-1">
-                <i data-lucide="help-circle" class="w-4 h-4"></i> 範例格式與備份
-              </div>
-              <p class="text-xs text-slate-500 dark:text-slate-400">若想自己整理單字表匯入，可先下載標準範例；或下載完整 JSON 全量備份。</p>
-            </div>
-            <div class="flex gap-2">
-              <button id="btn-download-sample-csv" class="flex-1 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition">
-                <i data-lucide="file-text" class="w-3.5 h-3.5"></i> 範例 CSV
-              </button>
-              <button id="btn-export-json" class="flex-1 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition">
-                <i data-lucide="database" class="w-3.5 h-3.5"></i> JSON 備份
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 匯入拖曳上傳區 -->
-        <div class="space-y-3">
-          <label class="block text-sm font-semibold">匯入外部 CSV 單字檔</label>
-          <div id="csv-drop-zone" class="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-8 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 transition-all relative">
-            <input type="file" id="csv-file-input" accept=".csv,text/csv" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
-            <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-3">
-              <i data-lucide="upload-cloud" class="w-6 h-6"></i>
-            </div>
-            <h4 class="text-sm font-bold text-slate-800 dark:text-slate-200">點擊選擇 CSV 或拖曳檔案到此處</h4>
-            <p class="text-xs text-slate-400 mt-1">支援標準逗號分隔格式，自動跳脫引號與長例句</p>
-          </div>
-        </div>
-
-        <!-- CSV 預覽與確認卡片 -->
-        <div id="csv-preview-card" class="hidden space-y-3 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
-          <div class="flex items-center justify-between">
-            <span id="csv-preview-count" class="font-bold text-xs text-indigo-600 dark:text-indigo-400">已解析單字</span>
-            <div class="flex items-center gap-4 text-xs">
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <input type="radio" name="import-mode" value="merge" checked class="text-indigo-600">
-                <span>合併更新</span>
-              </label>
-              <label class="flex items-center gap-1.5 cursor-pointer text-rose-500">
-                <input type="radio" name="import-mode" value="overwrite" class="text-rose-600">
-                <span>完全覆蓋現有</span>
-              </label>
-            </div>
-          </div>
-
-          <div class="overflow-x-auto max-h-48 border border-slate-200 dark:border-slate-700 rounded-lg">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-slate-100 dark:bg-slate-800 sticky top-0 text-slate-500">
-                <tr>
-                  <th class="p-2">單字</th>
-                  <th class="p-2">詞性</th>
-                  <th class="p-2">繁體中文釋義</th>
-                  <th class="p-2">標籤</th>
-                </tr>
-              </thead>
-              <tbody id="csv-preview-tbody"></tbody>
-            </table>
-          </div>
-
-          <button id="btn-confirm-import" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition shadow-md shadow-emerald-600/20">
-            <i data-lucide="check-circle" class="w-4 h-4"></i> 確認匯入並保存至單字庫
-          </button>
-        </div>
-      </div>
-    </section>
-
   </main>
 
   <!-- 底部固定行動版選單 (Mobile Bar) -->
@@ -791,11 +793,14 @@
     <button data-nav-target="spelling" class="flex flex-col items-center gap-1 p-1.5 rounded-lg text-slate-500">
       <i data-lucide="spell-check" class="w-4 h-4"></i> 拼字
     </button>
+    <button data-nav-target="listening" class="flex flex-col items-center gap-1 p-1.5 rounded-lg text-slate-500">
+      <i data-lucide="headphones" class="w-4 h-4"></i> 聽力
+    </button>
     <button data-nav-target="add" class="flex flex-col items-center gap-1 p-1.5 rounded-lg text-slate-500">
       <i data-lucide="plus-circle" class="w-4 h-4"></i> 新增
     </button>
-    <button data-nav-target="data" class="flex flex-col items-center gap-1 p-1.5 rounded-lg text-slate-500">
-      <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> CSV
+    <button onclick="document.getElementById('btn-open-settings').click()" class="flex flex-col items-center gap-1 p-1.5 rounded-lg text-slate-500">
+      <i data-lucide="settings" class="w-4 h-4"></i> 設定
     </button>
   </div>
 
@@ -827,12 +832,26 @@
 
         <!-- 模型選擇 -->
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Gemini 模型型號</label>
-          <select id="settings-model" class="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-indigo-500">
-            <option value="gemini-1.5-flash">Gemini 1.5 Flash (快速、輕量、推薦)</option>
-            <option value="gemini-2.0-flash">Gemini 2.0 Flash (最新旗艦極速版)</option>
-            <option value="gemini-1.5-pro">Gemini 1.5 Pro (深度語言邏輯分析)</option>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">Gemini 模型版本</label>
+            <span class="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">支援各世代官方版本與自訂型號</span>
+          </div>
+          <select id="settings-model" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-indigo-500 font-medium">
+            <optgroup label="目前支援的 Gemini 模型">
+              <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash (推薦)</option>
+              <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
+              <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (輕量快速)</option>
+            </optgroup>
+            <optgroup label="自訂">
+              <option value="custom">自訂輸入模型名稱 (Custom Model)...</option>
+            </optgroup>
           </select>
+          
+          <!-- 自訂模型輸入框 (選中自訂時顯示) -->
+          <div id="custom-model-container" class="hidden mt-2">
+            <input type="text" id="settings-custom-model" placeholder="請輸入模型代號，例如：gemini-3.0-flash" class="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 text-xs focus:outline-none focus:border-indigo-500">
+            <p class="text-[10px] text-slate-400 mt-1">若 Google 發布任何最新型號，可直接在此輸入代號使用。</p>
+          </div>
         </div>
 
         <!-- 語音發音設定 -->
@@ -859,8 +878,8 @@
         <!-- 開關設定 -->
         <div class="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800 text-sm">
           <label class="flex items-center justify-between cursor-pointer">
-            <span class="font-medium text-slate-700 dark:text-slate-300">複習卡片時自動播放語音</span>
-            <input type="checkbox" id="settings-autoplay-audio" class="w-4 h-4 rounded text-indigo-600 accent-indigo-600">
+            <span class="font-medium text-slate-700 dark:text-slate-300">操作提示音效 (答對/翻卡音效)</span>
+            <input type="checkbox" id="settings-sound-effects" checked class="w-4 h-4 rounded text-indigo-600 accent-indigo-600">
           </label>
           <label class="flex items-center justify-between cursor-pointer">
             <span class="font-medium text-slate-700 dark:text-slate-300">深色主題模式 (Dark Mode)</span>
@@ -868,10 +887,94 @@
           </label>
         </div>
 
-        <!-- 示範單字庫載入 -->
+        <!-- ================= 資料管理 (Data Management) ================= -->
+        <div class="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-3">
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">資料管理 (CSV 匯入 / 匯出)</label>
+          
+          <!-- CSV 匯出與匯入主按鈕 -->
+          <div class="grid grid-cols-2 gap-2">
+            <!-- 匯出 CSV -->
+            <button type="button" id="settings-btn-export-csv" class="py-2.5 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center justify-center gap-1.5 border border-indigo-200 dark:border-indigo-800/60 transition shadow-sm">
+              <i data-lucide="download" class="w-4 h-4"></i> 匯出 CSV 單字檔
+            </button>
+
+            <!-- 匯入 CSV (觸發檔案選擇) -->
+            <label class="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-700 cursor-pointer transition shadow-sm text-center">
+              <i data-lucide="upload" class="w-4 h-4"></i> 匯入 CSV 單字檔
+              <input type="file" id="settings-csv-file-input" accept=".csv,text/csv" class="hidden">
+            </label>
+          </div>
+
+          <!-- 次要資料操作 -->
+          <div class="grid grid-cols-3 gap-2 text-xs">
+            <button type="button" id="settings-btn-download-template" class="py-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold border border-slate-200 dark:border-slate-700 transition flex items-center justify-center gap-1">
+              <i data-lucide="file-text" class="w-3.5 h-3.5"></i> 下載空白範本
+            </button>
+            <button type="button" id="settings-btn-print-words" class="py-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold border border-slate-200 dark:border-slate-700 transition flex items-center justify-center gap-1">
+              <i data-lucide="printer" class="w-3.5 h-3.5"></i> 列印 A4 小抄
+            </button>
+            <button type="button" id="settings-btn-export-json" class="py-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold border border-slate-200 dark:border-slate-700 transition flex items-center justify-center gap-1">
+              <i data-lucide="database" class="w-3.5 h-3.5"></i> JSON 備份
+            </button>
+          </div>
+
+          <!-- 常見基礎單字包版本 (自主按需載入，預設不強制) -->
+          <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div class="text-[11px] font-bold text-slate-400 mb-1.5 flex items-center gap-1">
+              <i data-lucide="library" class="w-3 h-3"></i> 常用基礎版本詞庫 (按需一鍵導入)
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <button type="button" onclick="importPresetVocab('daily')" class="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 text-[11px] font-medium transition">
+                + 日常生活核心必備
+              </button>
+              <button type="button" onclick="importPresetVocab('toeic')" class="px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 hover:bg-sky-100 text-[11px] font-medium transition">
+                + 多益商務職場精選
+              </button>
+              <button type="button" onclick="importPresetVocab('travel')" class="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 text-[11px] font-medium transition">
+                + 出國旅遊與情境對話
+              </button>
+            </div>
+          </div>
+
+          <!-- CSV 匯入即時預覽與確認卡片 (選擇檔案後展開) -->
+          <div id="settings-csv-preview" class="hidden p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 space-y-2.5">
+            <div class="flex items-center justify-between text-xs">
+              <span id="settings-preview-count" class="font-bold text-indigo-600 dark:text-indigo-400">已解析單字</span>
+              <div class="flex items-center gap-3">
+                <label class="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="settings-import-mode" value="merge" checked class="text-indigo-600">
+                  <span>合併更新</span>
+                </label>
+                <label class="flex items-center gap-1 cursor-pointer text-rose-500">
+                  <input type="radio" name="settings-import-mode" value="overwrite" class="text-rose-600">
+                  <span>覆蓋</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto max-h-36 border border-slate-200 dark:border-slate-700 rounded-lg">
+              <table class="w-full text-left text-[11px]">
+                <thead class="bg-slate-100 dark:bg-slate-800 sticky top-0 text-slate-500">
+                  <tr>
+                    <th class="p-1.5">單字</th>
+                    <th class="p-1.5">釋義</th>
+                    <th class="p-1.5">標籤</th>
+                  </tr>
+                </thead>
+                <tbody id="settings-preview-tbody"></tbody>
+              </table>
+            </div>
+
+            <button type="button" id="settings-btn-confirm-import" class="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition">
+              <i data-lucide="check-circle" class="w-4 h-4"></i> 確認匯入單字庫
+            </button>
+          </div>
+        </div>
+
+        <!-- 清空所有單字資料 -->
         <div class="pt-2 border-t border-slate-200 dark:border-slate-800">
-          <button id="btn-reset-default-words" class="w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition">
-            載入官方高頻精選示範單字包
+          <button id="btn-clear-all-words" class="w-full py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-300 text-xs font-semibold transition border border-rose-200 dark:border-rose-900/60 flex items-center justify-center gap-1.5">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> 清空所有單字庫資料
           </button>
         </div>
       </div>
@@ -946,6 +1049,20 @@
         <button onclick="closeEditModal()" class="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs">取消</button>
         <button onclick="saveEditedWord()" class="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/20">儲存變更</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ================= A4 列印口袋單字小抄容器 (僅在列印時顯示) ================= -->
+  <div id="print-section" class="print-only p-6 text-black bg-white">
+    <div class="border-b-2 border-black pb-2 mb-4 flex justify-between items-end">
+      <div>
+        <h2 class="text-xl font-black tracking-tight">EchoVocab 隨身口袋單字表</h2>
+        <p class="text-xs text-gray-600">通勤自測專用：沿中間虛線折疊，正面英文自測，背面對照中文釋義</p>
+      </div>
+      <div class="text-xs font-mono text-gray-500" id="print-date"></div>
+    </div>
+    <div id="print-words-grid" class="space-y-2 text-xs">
+      <!-- JS 動態填入 -->
     </div>
   </div>
 

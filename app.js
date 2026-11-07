@@ -3,7 +3,11 @@
  * 全功能客戶端核心腳本
  */
 
-// ==================== 1. 音效引擎 (Web Audio API) ====================
+function safeConfetti(opts) {
+  try {
+    if (typeof confetti === 'function') confetti(opts);
+  } catch (e) {}
+}
 class SoundEngine {
   constructor() {
     this.ctx = null;
@@ -17,6 +21,7 @@ class SoundEngine {
   }
 
   playSuccess() {
+    if (!app.settings.soundEffects) return;
     try {
       this.init();
       const now = this.ctx.currentTime;
@@ -38,6 +43,7 @@ class SoundEngine {
   }
 
   playError() {
+    if (!app.settings.soundEffects) return;
     try {
       this.init();
       const now = this.ctx.currentTime;
@@ -56,6 +62,7 @@ class SoundEngine {
   }
 
   playFlip() {
+    if (!app.settings.soundEffects) return;
     try {
       this.init();
       const now = this.ctx.currentTime;
@@ -74,6 +81,7 @@ class SoundEngine {
   }
 
   playFanfare() {
+    if (!app.settings.soundEffects) return;
     try {
       this.init();
       const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
@@ -345,10 +353,51 @@ class CSVService {
 }
 
 // ==================== 5. Gemini AI 整合服務 ====================
+const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+
+function extractRobustJSON(rawText) {
+  if (!rawText) throw new Error('AI 未回傳任何內容');
+
+  let cleaned = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+  // 1. 嘗試直接解析
+  try {
+    return JSON.parse(cleaned);
+  } catch (e1) {}
+
+  // 2. 嘗試抓取 [ ... ] 陣列
+  const startArr = cleaned.indexOf('[');
+  const endArr = cleaned.lastIndexOf(']');
+  if (startArr !== -1 && endArr > startArr) {
+    const candidate = cleaned.slice(startArr, endArr + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch (e2) {}
+  }
+
+  // 3. 嘗試抓取 { ... } 物件
+  const startObj = cleaned.indexOf('{');
+  const endObj = cleaned.lastIndexOf('}');
+  if (startObj !== -1 && endObj > startObj) {
+    const candidate = cleaned.slice(startObj, endObj + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch (e3) {}
+  }
+
+  // 4. 清除尾端多餘逗號嘗試
+  try {
+    const fixed = cleaned.replace(/,\s*([\]}])/g, '$1');
+    return JSON.parse(fixed);
+  } catch (e4) {}
+
+  throw new Error('AI 回傳內容未能成功解析為 JSON，請重試一次');
+}
+
 class GeminiService {
-  constructor(apiKey = '', model = 'gemini-1.5-flash') {
+  constructor(apiKey = '', model = DEFAULT_GEMINI_MODEL) {
     this.apiKey = apiKey;
-    this.model = model;
+    this.model = model || DEFAULT_GEMINI_MODEL;
   }
 
   setApiKey(key) {
@@ -356,7 +405,7 @@ class GeminiService {
   }
 
   setModel(model) {
-    this.model = model || 'gemini-1.5-flash';
+    this.model = model?.trim() || DEFAULT_GEMINI_MODEL;
   }
 
   async callGemini(prompt, systemInstruction = '') {
@@ -364,7 +413,12 @@ class GeminiService {
       throw new Error('NO_API_KEY');
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    let modelName = (this.model || DEFAULT_GEMINI_MODEL).trim();
+    if (modelName.startsWith('models/')) {
+      modelName = modelName.slice(7);
+    }
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${this.apiKey.trim()}`;
     
     const requestBody = {
       contents: [
@@ -385,6 +439,82 @@ class GeminiService {
       };
     }
 
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+    } catch (netErr) {
+      throw new Error(`網路連線異常，無法連線至 Google 伺服器 (${netErr.message})`);
+    }
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      const rawMsg = err.error?.message || `HTTP ${response.status}`;
+
+      if (response.status === 400 && rawMsg.includes('API_KEY_INVALID')) {
+        throw new Error('API Key 無效，請檢查是否有複製到多餘空白');
+      } else if (response.status === 404 || rawMsg.includes('not found') || rawMsg.includes('no longer available')) {
+        throw new Error(`模型「${modelName}」目前無法使用，請至右上角設定選擇可用的 Gemini 模型，例如「${DEFAULT_GEMINI_MODEL}」`);
+      } else if (response.status === 429) {
+        throw new Error(`Gemini API 暫時受限（${rawMsg}）。請檢查 Google AI Studio 的配額與帳單狀態，或稍後重試。`);
+      }
+      throw new Error(`AI 請求失敗: ${rawMsg}`);
+    }
+
+    const data = await response.json();
+    const candidate = data.candidates?.[0];
+    const responseText = candidate?.content?.parts
+      ?.map(part => part.text)
+      .filter(Boolean)
+      .join('\n');
+    if (!responseText) {
+      if (data.promptFeedback?.blockReason) {
+        throw new Error(`Gemini 因安全政策未處理此請求（${data.promptFeedback.blockReason}）`);
+      }
+      if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
+        throw new Error(`Gemini 未能完成回應（${candidate.finishReason}）`);
+      }
+      throw new Error('Gemini API 未回傳有效文字內容');
+    }
+
+    return responseText;
+  }
+
+  // 1.5 圖片/截圖 OCR 多模態提取生詞
+  async extractWordsFromImage(base64Image, mimeType = 'image/jpeg') {
+    if (!this.apiKey) {
+      throw new Error('NO_API_KEY');
+    }
+
+    let modelName = (this.model || DEFAULT_GEMINI_MODEL).trim();
+    if (modelName.startsWith('models/')) modelName = modelName.slice(7);
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${this.apiKey.trim()}`;
+    
+    const prompt = `請識別並提取這張圖片中的重要英文生字或重點高級單字（提取約 3~8 個最有學習價值的單字）。
+為每個單字生成學習卡片 JSON 陣列，欄位包含：word, phonetic, partOfSpeech, definition (繁體中文), example_en, example_zh, mnemonic, tags。
+嚴格規定：只回傳純 JSON 陣列，不要有任何 Markdown 註記。`;
+
+    const requestBody = {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: base64Image.split(',')[1] || base64Image
+              }
+            }
+          ]
+        }
+      ]
+    };
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -393,35 +523,36 @@ class GeminiService {
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Gemini API 請求失敗 (HTTP ${response.status})`);
+      throw new Error(err.error?.message || `圖片辨識失敗 (HTTP ${response.status})`);
     }
 
     const data = await response.json();
     const candidate = data.candidates?.[0];
     if (!candidate || !candidate.content?.parts?.[0]?.text) {
-      throw new Error('Gemini API 未回傳有效內容');
+      throw new Error('Gemini 未回傳有效辨識結果');
     }
 
-    return candidate.content.parts[0].text;
+    const parsed = extractRobustJSON(candidate.content.parts[0].text);
+    return this.mapToWordObjects(parsed, ['圖片提取']);
   }
 
   // 1. 單字或片語智慧解析
   async analyzeWordOrList(inputWords, targetTags = ['AI擴充']) {
     try {
-      const prompt = `你是一位專業的英文教學與記憶大師。請分析以下使用者提供的單字、片語或短語：
+      const prompt = `你是一位專業的英文教學大師。使用者輸入了以下內容（可能是單字、片語、句子或想學習的中文主題）：
 "${inputWords}"
 
-請為每個單字/片語提供完整的學習資料，包含：
+請提取或整理出 1 到 6 個最值得學習的核心英文生詞，為每個單字提供完整的繁體中文學習資料：
 - word: 正確英文原型單字或片語
 - phonetic: 國際音標 (IPA)，例如 /ˌserənˈdɪpəti/
 - partOfSpeech: 詞性縮寫，例如 n., v., adj., adv., phrase
-- definition: 繁體中文詳細且準確的釋義
-- example_en: 1句地道生動、符合生活或職場語境的英文例句
+- definition: 準確簡潔的繁體中文釋義
+- example_en: 1句實用且地道的英文例句
 - example_zh: 繁體中文例句翻譯
-- mnemonic: 超有趣的記憶聯想法（可包含諧音梗、字根字首分析或圖像化口訣，幫助秒記）
-- tags: 推薦的分類標籤陣列，例如 ["生活英語", "商務"]
+- mnemonic: 超有趣的記憶聯想法（諧音梗、字根字首或趣味口訣，幫助秒記）
+- tags: 推薦的分類標籤陣列，例如 ["生活英語", "職場"]
 
-請直接回傳純 JSON 陣列，不要有任何 Markdown 註記或外層程式碼區塊包裹，格式範例如下：
+重要規定：你必須只回傳一個合法的 JSON 陣列，不得包含任何 Markdown 格式或額外說明。格式：
 [
   {
     "word": "epiphany",
@@ -435,14 +566,15 @@ class GeminiService {
   }
 ]`;
 
-      const text = await this.callGemini(prompt, '你只回傳有效的 JSON 陣列，不輸出任何其他開場白或額外文字。');
-      const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleanJson);
+      const text = await this.callGemini(prompt, '你只回傳合法的 JSON 陣列，嚴禁任何其他非 JSON 文字。');
+      const parsed = extractRobustJSON(text);
+      if (!Array.isArray(parsed)) {
+        throw new Error('AI 未能回傳單字清單陣列');
+      }
       return this.mapToWordObjects(parsed, targetTags);
     } catch (err) {
       if (err.message === 'NO_API_KEY') {
         showToast('💡 提示：尚未設定 API Key，已為您生成本機模擬智慧卡片。可至右上角 ⚙️ 設定填入 Gemini Key！', 'info');
-        // 智慧本地拆解
         const rawList = inputWords.split(/[,，\n、]/).map(w => w.trim()).filter(Boolean);
         const mocked = rawList.map(w => ({
           word: w,
@@ -463,7 +595,7 @@ class GeminiService {
   mapToWordObjects(list, defaultTags) {
     return list.map(item => ({
       id: 'w_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
-      word: item.word,
+      word: item.word || 'Word',
       phonetic: item.phonetic || '',
       partOfSpeech: item.partOfSpeech || '',
       definition: item.definition || '',
@@ -486,12 +618,11 @@ class GeminiService {
   // 2. 情境主題單字擴展產生器
   async generateThemeWords(themeTopic, count = 6) {
     try {
-      const prompt = `請針對主題「${themeTopic}」，挑選 ${count} 個最實用、最核心的高頻英文單字或地道片語。
+      const prompt = `請針對生活/職場主題「${themeTopic}」，挑選 ${count} 個最實用、最核心的高頻英文單字或地道片語。
 請以繁體中文輸出完整的學習卡片 JSON 陣列，欄位包含 word, phonetic, partOfSpeech, definition, example_en, example_zh, mnemonic, tags。
-請直接回傳純 JSON 陣列。`;
+重要：只回傳嚴格合法的 JSON 陣列，不輸出任何其他開場白。`;
       const text = await this.callGemini(prompt, '只回傳嚴格合法的 JSON 陣列。');
-      const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-      return JSON.parse(cleanJson);
+      return extractRobustJSON(text);
     } catch (err) {
       if (err.message === 'NO_API_KEY') {
         showToast('💡 提示：尚未設定 API Key，為您呈現情境精選示範單字！可至 ⚙️ 設定填入 Key', 'info');
@@ -515,16 +646,6 @@ class GeminiService {
             example_zh: '你可以點一杯加入燕麥奶和濃縮咖啡的客製化飲品。',
             mnemonic: 'custom (習俗、顧客) -> 按照顧客需求量身打造。',
             tags: [themeTopic]
-          },
-          {
-            word: 'complimentary',
-            phonetic: '/ˌkɒmplɪˈmentri/',
-            partOfSpeech: 'adj.',
-            definition: '免費贈送的；讚美的',
-            example_en: 'The hotel offers complimentary breakfast and Wi-Fi.',
-            example_zh: '這間飯店提供免費的早餐與無線網路。',
-            mnemonic: '來自 compliment (稱讚、致敬) -> 給客人的致意禮遇，就是免費贈送！',
-            tags: [themeTopic]
           }
         ];
       }
@@ -540,8 +661,8 @@ class GeminiService {
 
 請扮演資深外籍美語家教進行評估，提供繁體中文回饋，請嚴格按照以下 JSON 格式回傳：
 {
-  "score": 85, // 0~100 的綜合評分
-  "isCorrect": true, // 單字用法與文法是否基本正確
+  "score": 85,
+  "isCorrect": true,
   "grammarFeedback": "文法與時態分析說明...",
   "naturalFeedback": "道地程度與母語者用詞習慣說明...",
   "betterVersion": "母語人士更道地自然的修飾版本句子",
@@ -550,8 +671,7 @@ class GeminiService {
 只輸出純 JSON，不要附加任何 Markdown 標記。`;
 
       const text = await this.callGemini(prompt, '只回傳嚴格合法的 JSON 物件。');
-      const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-      return JSON.parse(cleanJson);
+      return extractRobustJSON(text);
     } catch (err) {
       if (err.message === 'NO_API_KEY') {
         showToast('💡 提示：示範評分模式（填入 Gemini API Key 可獲得真 AI 深度診斷）', 'info');
@@ -575,8 +695,7 @@ class GeminiService {
 串聯寫成一篇長度約 80~140 字的趣味英語短故事或生活情境對話。
 要求：
 1. 必須自然地融入所有給定的單字，並將這些單字用 <b>...</b> 粗體醒目標記。
-2. 故事要有情節、畫面感與幽默感，方便使用者串聯記憶。
-3. 提供流暢優美的繁體中文全文翻譯。
+2. 故事要有情節畫面感，提供流暢優美的繁體中文全文翻譯。
 
 回傳 JSON 格式：
 {
@@ -589,16 +708,15 @@ class GeminiService {
 只回傳純 JSON。`;
 
       const text = await this.callGemini(prompt, '只回傳純 JSON 物件。');
-      const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-      return JSON.parse(cleanJson);
+      return extractRobustJSON(text);
     } catch (err) {
       if (err.message === 'NO_API_KEY') {
         showToast('💡 提示：示範情境短文（填入 Gemini API Key 享受無限 AI 創作故事）', 'info');
         return {
           title_en: 'A Spark of Inspiration',
           title_zh: '靈光乍現的一天',
-          story_en: `It was a morning of pure <b>${wordsList[0] || 'serendipity'}</b> when Alex decided to stop <b>${wordsList[1] || 'procrastinating'}</b>. With remarkable <b>${wordsList[2] || 'resilience'}</b>, he had a sudden <b>${wordsList[3] || 'epiphany'}</b> that success is not accidental, but created step by step every single day.`,
-          story_zh: `這是一個純粹幸運的早晨，亞歷克斯決定不再拖延。憑藉著非凡的韌性，他突然靈光乍現：成功並非偶然，而是一步一腳印踏實累積而來的。`,
+          story_en: `It was a morning of pure <b>${wordsList[0] || 'serendipity'}</b> when Alex had a sudden <b>${wordsList[1] || 'epiphany'}</b> about his career journey.`,
+          story_zh: `這是一個純粹幸運的早晨，亞歷克斯突然靈光乍現，領悟了人生的方向。`,
           takeaway: '生活中的美好往往藏在堅持與行動的轉角處。'
         };
       }
@@ -613,10 +731,10 @@ class AppState {
     this.words = [];
     this.settings = {
       apiKey: '',
-      model: 'gemini-1.5-flash',
+      model: DEFAULT_GEMINI_MODEL,
       voiceURI: '',
       speechRate: 1.0,
-      autoPlayAudio: true,
+      soundEffects: true,
       darkMode: false
     };
     this.currentView = 'dashboard';
@@ -644,14 +762,33 @@ class AppState {
       const storedWords = localStorage.getItem('echovocab_words_v1');
       if (storedWords) {
         this.words = JSON.parse(storedWords);
+        // 若含有舊版的預設初始單字，自動清除保持乾淨空白
+        if (Array.isArray(this.words) && this.words.every(w => w.id && w.id.startsWith('w_init_'))) {
+          this.words = [];
+          this.saveWords();
+        }
       } else {
-        this.words = this.getDefaultWords();
+        // 完全空白，不預載任何預設資料
+        this.words = [];
         this.saveWords();
       }
 
       const storedSettings = localStorage.getItem('echovocab_settings_v1');
       if (storedSettings) {
         this.settings = { ...this.settings, ...JSON.parse(storedSettings) };
+        const retiredModels = [
+          'gemini-1.5-flash',
+          'gemini-1.5-flash-8b',
+          'gemini-1.5-pro',
+          'gemini-2.0-flash',
+          'gemini-2.0-flash-lite',
+          'gemini-2.5-flash',
+          'gemini-2.5-pro'
+        ];
+        if (!this.settings.model || retiredModels.includes(this.settings.model)) {
+          this.settings.model = DEFAULT_GEMINI_MODEL;
+          this.saveSettings();
+        }
       }
 
       const streakData = localStorage.getItem('echovocab_streak_v1');
@@ -663,6 +800,7 @@ class AppState {
       }
     } catch (e) {
       console.error('載入本機資料失敗', e);
+      this.words = [];
     }
   }
 
@@ -716,73 +854,7 @@ class AppState {
   }
 
   getDefaultWords() {
-    return [
-      {
-        id: 'w_init_1',
-        word: 'serendipity',
-        phonetic: '/ˌserənˈdɪpəti/',
-        partOfSpeech: 'n.',
-        definition: '意外發現美好事物的機緣；幸運的小確幸',
-        example_en: 'Finding this cozy bookstore in the alley was pure serendipity.',
-        example_zh: '在巷弄中發現這間溫馨的書店純粹是個美好的意外驚喜。',
-        mnemonic: '諧音「撕肉滴破涕」：撕下一塊美味香肉，感動得破涕為笑，意想不到的幸運收穫！',
-        tags: ['進階美詞', '生活小確幸'],
-        createdAt: new Date().toISOString(),
-        srs: { repetitions: 0, interval: 1, easeFactor: 2.5, nextReviewDate: new Date().toISOString().split('T')[0], masteryLevel: 0 }
-      },
-      {
-        id: 'w_init_2',
-        word: 'epiphany',
-        phonetic: '/ɪˈpɪfəni/',
-        partOfSpeech: 'n.',
-        definition: '頓悟；突然的領悟；靈光乍現',
-        example_en: 'During the morning shower, she had an epiphany about how to solve the algorithm.',
-        example_zh: '在早晨洗澡時，她靈光乍現，突然想到了如何解決那個演算法。',
-        mnemonic: '諧音「一匹憤逆」：困境中突然逆轉，腦洞大開，瞬間頓悟！',
-        tags: ['心靈思維', '寫作必備'],
-        createdAt: new Date().toISOString(),
-        srs: { repetitions: 1, interval: 3, easeFactor: 2.5, nextReviewDate: new Date().toISOString().split('T')[0], masteryLevel: 2 }
-      },
-      {
-        id: 'w_init_3',
-        word: 'resilience',
-        phonetic: '/rɪˈzɪliəns/',
-        partOfSpeech: 'n.',
-        definition: '心理韌性；復原力；彈性',
-        example_en: 'Her resilience and optimism helped the entire team get through the crisis.',
-        example_zh: '她的堅韌不拔與樂觀心態幫助整個團隊度過了危機。',
-        mnemonic: '詞根 re(往回) + sili(跳躍) -> 彈回原狀，無論被壓得多扁都能反彈！',
-        tags: ['多益必備', '職場能力'],
-        createdAt: new Date().toISOString(),
-        srs: { repetitions: 2, interval: 6, easeFactor: 2.5, nextReviewDate: new Date().toISOString().split('T')[0], masteryLevel: 3 }
-      },
-      {
-        id: 'w_init_4',
-        word: 'ubiquitous',
-        phonetic: '/juːˈbɪkwɪtəs/',
-        partOfSpeech: 'adj.',
-        definition: '無所不在的；隨處可見的',
-        example_en: 'Artificial intelligence is becoming ubiquitous in our daily lives.',
-        example_zh: '人工智慧在我們的日常生活中正變得無所不在。',
-        mnemonic: 'ubi(何處) + quique(任何) -> 任何角落都看得到，鋪天蓋地！',
-        tags: ['科技趨勢', '雅思高頻'],
-        createdAt: new Date().toISOString(),
-        srs: { repetitions: 0, interval: 1, easeFactor: 2.5, nextReviewDate: new Date().toISOString().split('T')[0], masteryLevel: 0 }
-      },
-      {
-        id: 'w_init_5',
-        word: 'procrastinate',
-        phonetic: '/prəʊˈkræstɪneɪt/',
-        partOfSpeech: 'v.',
-        definition: '拖延；拖延症；推遲',
-        example_en: 'Stop procrastinating and finish your assignment before the deadline!',
-        example_zh: '別再拖延了，趕在截止日期前把作業做完吧！',
-        mnemonic: 'pro(向前推) + cras(明天) -> 永遠推給明天做，這就是拖延症！',
-        tags: ['生活口語', '自我提升'],
-        createdAt: new Date().toISOString(),
-        srs: { repetitions: 3, interval: 10, easeFactor: 2.6, nextReviewDate: new Date().toISOString().split('T')[0], masteryLevel: 3 }
-      }
-    ];
+    return [];
   }
 }
 
@@ -927,11 +999,11 @@ function renderCurrentView() {
     case 'spelling':
       initSpellingMode();
       break;
+    case 'listening':
+      initListeningMode();
+      break;
     case 'ai-lab':
       initAILabView();
-      break;
-    case 'data':
-      renderDataView();
       break;
   }
 }
@@ -1219,20 +1291,28 @@ function saveEditedWord() {
 // ==================== 11. 新增單字 (AI 智慧解析 + 手動) ====================
 function renderAddView() {
   const aiTabBtn = document.getElementById('tab-btn-ai');
+  const ocrTabBtn = document.getElementById('tab-btn-ocr');
   const manualTabBtn = document.getElementById('tab-btn-manual');
   const themeTabBtn = document.getElementById('tab-btn-theme');
 
   const aiSection = document.getElementById('section-ai-add');
+  const ocrSection = document.getElementById('section-ocr-add');
   const manualSection = document.getElementById('section-manual-add');
   const themeSection = document.getElementById('section-theme-add');
 
+  let currentOcrBase64 = '';
+  let currentOcrMime = 'image/jpeg';
+
   const switchTab = (tab) => {
-    [aiSection, manualSection, themeSection].forEach(s => s?.classList.add('hidden'));
-    [aiTabBtn, manualTabBtn, themeTabBtn].forEach(b => b?.classList.remove('active-tab', 'border-indigo-600', 'text-indigo-600', 'dark:text-indigo-400'));
+    [aiSection, ocrSection, manualSection, themeSection].forEach(s => s?.classList.add('hidden'));
+    [aiTabBtn, ocrTabBtn, manualTabBtn, themeTabBtn].forEach(b => b?.classList.remove('active-tab', 'border-b-2', 'border-indigo-600', 'text-indigo-600', 'dark:text-indigo-400'));
 
     if (tab === 'ai') {
       aiSection?.classList.remove('hidden');
       aiTabBtn?.classList.add('active-tab', 'border-b-2', 'border-indigo-600', 'text-indigo-600', 'dark:text-indigo-400');
+    } else if (tab === 'ocr') {
+      ocrSection?.classList.remove('hidden');
+      ocrTabBtn?.classList.add('active-tab', 'border-b-2', 'border-indigo-600', 'text-indigo-600', 'dark:text-indigo-400');
     } else if (tab === 'manual') {
       manualSection?.classList.remove('hidden');
       manualTabBtn?.classList.add('active-tab', 'border-b-2', 'border-indigo-600', 'text-indigo-600', 'dark:text-indigo-400');
@@ -1243,8 +1323,83 @@ function renderAddView() {
   };
 
   if (aiTabBtn) aiTabBtn.onclick = () => switchTab('ai');
+  if (ocrTabBtn) ocrTabBtn.onclick = () => switchTab('ocr');
   if (manualTabBtn) manualTabBtn.onclick = () => switchTab('manual');
   if (themeTabBtn) themeTabBtn.onclick = () => switchTab('theme');
+
+  // OCR 圖片處理
+  const handleOcrFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) {
+      showToast('請選擇有效的圖片檔案', 'warning');
+      return;
+    }
+    currentOcrMime = file.type;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      currentOcrBase64 = e.target.result;
+      const previewImg = document.getElementById('ocr-preview-img');
+      const previewContainer = document.getElementById('ocr-preview-container');
+      const placeholder = document.getElementById('ocr-placeholder');
+      if (previewImg) previewImg.src = currentOcrBase64;
+      previewContainer?.classList.remove('hidden');
+      placeholder?.classList.add('hidden');
+      showToast('圖片已載入，點擊辨識按鈕即可提取單字！', 'info');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const ocrFileInput = document.getElementById('ocr-file-input');
+  if (ocrFileInput) {
+    ocrFileInput.onchange = (e) => handleOcrFile(e.target.files[0]);
+  }
+
+  // 支援全域 Ctrl+V 貼上圖片
+  window.addEventListener('paste', (e) => {
+    if (app.currentView !== 'add') return;
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    for (const item of items) {
+      if (item.type.indexOf('image') !== -1) {
+        const blob = item.getAsFile();
+        switchTab('ocr');
+        handleOcrFile(blob);
+        break;
+      }
+    }
+  });
+
+  const ocrSubmitBtn = document.getElementById('btn-ocr-submit');
+  if (ocrSubmitBtn) {
+    ocrSubmitBtn.onclick = async () => {
+      if (!currentOcrBase64) {
+        showToast('請先上傳或貼上圖片！', 'warning');
+        return;
+      }
+      ocrSubmitBtn.disabled = true;
+      const spinner = document.getElementById('ocr-spinner');
+      spinner?.classList.remove('hidden');
+
+      try {
+        const words = await gemini.extractWordsFromImage(currentOcrBase64, currentOcrMime);
+        words.forEach(w => {
+          const idx = app.words.findIndex(existing => existing.word.toLowerCase() === w.word.toLowerCase());
+          if (idx >= 0) {
+            app.words[idx] = { ...app.words[idx], ...w };
+          } else {
+            app.words.unshift(w);
+          }
+        });
+        app.saveWords();
+        sound.playFanfare();
+        showToast(`🎉 成功從圖片中識別並提取 ${words.length} 個生字！`, 'success');
+        setTimeout(() => switchView('wordbank'), 800);
+      } catch (err) {
+        showToast(err.message || '圖片辨識失敗，請檢查 API Key 設定。', 'error');
+      } finally {
+        ocrSubmitBtn.disabled = false;
+        spinner?.classList.add('hidden');
+      }
+    };
+  }
 
   // AI 智能解析送出按鈕
   const aiSubmitBtn = document.getElementById('btn-ai-submit');
@@ -1453,6 +1608,35 @@ function handleManualSubmit() {
 
 // ==================== 12. 翻卡測試 (Flashcard SRS) ====================
 function initFlashcardMode() {
+  const cardContainer = document.getElementById('flashcard-container');
+  const finishedContainer = document.getElementById('flashcard-finished');
+  const srsButtons = document.getElementById('flashcard-srs-buttons');
+
+  if (app.words.length === 0) {
+    cardContainer?.classList.add('hidden');
+    srsButtons?.classList.add('hidden');
+    if (finishedContainer) {
+      finishedContainer.classList.remove('hidden');
+      finishedContainer.innerHTML = `
+        <div class="w-16 h-16 rounded-3xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-500 flex items-center justify-center mx-auto text-2xl">
+          <i data-lucide="inbox" class="w-8 h-8"></i>
+        </div>
+        <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100">單字庫目前空空如也</h3>
+        <p class="text-xs text-slate-400 max-w-sm mx-auto">尚未新增任何單字。您可以透過 Gemini AI、情境產生、手動錄入或 CSV 匯入來建立專屬的單字清單！</p>
+        <div class="pt-2 flex justify-center gap-3">
+          <button onclick="switchView('add')" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition flex items-center gap-1.5">
+            <i data-lucide="plus" class="w-4 h-4"></i> 前往新增單字
+          </button>
+          <button onclick="document.getElementById('btn-open-settings').click()" class="px-5 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition flex items-center gap-1.5">
+            <i data-lucide="upload" class="w-4 h-4"></i> 匯入 CSV
+          </button>
+        </div>
+      `;
+      lucide.createIcons({ root: finishedContainer });
+    }
+    return;
+  }
+
   // 找出今日需複習的單字；若無，則採用所有單字打亂複習
   let queue = app.words.filter(w => SRSService.isDue(w));
   const isAllMode = queue.length === 0;
@@ -1473,6 +1657,8 @@ function initFlashcardMode() {
       : 'px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300';
   }
 
+  cardContainer?.classList.remove('hidden');
+  srsButtons?.classList.remove('hidden');
   renderCurrentFlashcard();
 }
 
@@ -1488,7 +1674,7 @@ function renderCurrentFlashcard() {
     cardContainer?.classList.add('hidden');
     finishedContainer?.classList.remove('hidden');
     sound.playFanfare();
-    confetti({
+    safeConfetti({
       particleCount: 100,
       spread: 70,
       origin: { y: 0.6 }
@@ -1536,12 +1722,6 @@ function renderCurrentFlashcard() {
     mnemonicBox?.classList.add('hidden');
   }
 
-  // 自動發音
-  if (app.settings.autoPlayAudio) {
-    setTimeout(() => {
-      tts.speak(word.word);
-    }, 200);
-  }
 }
 
 function flipFlashcard() {
@@ -1583,6 +1763,30 @@ function submitSRSGrade(grade) {
 
 // ==================== 13. 拼字練習 (Spelling Quiz) ====================
 function initSpellingMode() {
+  const card = document.getElementById('spelling-card');
+  const finished = document.getElementById('spelling-finished');
+
+  if (app.words.length === 0) {
+    card?.classList.add('hidden');
+    if (finished) {
+      finished.classList.remove('hidden');
+      finished.innerHTML = `
+        <div class="w-16 h-16 rounded-3xl bg-sky-50 dark:bg-sky-950/60 text-sky-500 flex items-center justify-center mx-auto text-2xl">
+          <i data-lucide="spell-check" class="w-8 h-8"></i>
+        </div>
+        <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100">單字庫目前是空的</h3>
+        <p class="text-xs text-slate-400 max-w-sm mx-auto">請先透過 Gemini AI 或 CSV 匯入新增單字，才能進行拼字盲打挑戰喔！</p>
+        <div class="pt-2 flex justify-center gap-3">
+          <button onclick="switchView('add')" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition flex items-center gap-1.5">
+            <i data-lucide="plus" class="w-4 h-4"></i> 前往新增單字
+          </button>
+        </div>
+      `;
+      lucide.createIcons({ root: finished });
+    }
+    return;
+  }
+
   // 打亂所有單字作為測驗題庫
   app.spellingList = [...app.words].sort(() => Math.random() - 0.5);
   app.spellingIndex = 0;
@@ -1601,7 +1805,7 @@ function renderCurrentSpelling() {
     card.classList.add('hidden');
     finished?.classList.remove('hidden');
     sound.playFanfare();
-    confetti({ particleCount: 120, spread: 80 });
+    safeConfetti({ particleCount: 120, spread: 80 });
     document.getElementById('spelling-final-score').textContent = app.spellingScore;
     document.getElementById('spelling-final-combo').textContent = app.spellingCombo;
     app.recordStudyToday();
@@ -1638,9 +1842,6 @@ function renderCurrentSpelling() {
     feedback.innerHTML = '';
     feedback.className = 'text-center h-8 font-semibold text-sm transition-all';
   }
-
-  // 播放發音
-  tts.speak(word.word);
 }
 
 function checkSpelling() {
@@ -1709,25 +1910,164 @@ function revealSpellingHint() {
     input.value = word.word[0]; // 填入首字母
   }
   showToast(`首字母為「${word.word[0].toUpperCase()}」，音標：${word.phonetic || '無'}`, 'info');
-  tts.speak(word.word);
 }
 
-// ==================== 14. 超乎預期功能：AI 實戰造句與故事生成 ====================
-function initAILabView() {
-  // 填入所有單字至造句選單
-  const select = document.getElementById('sentence-word-select');
-  if (select) {
-    select.innerHTML = app.words.map(w => `<option value="${w.word}">${w.word} — ${w.definition || ''}</option>`).join('');
+// ==================== 13.5 聽力盲測模式 (Listening Challenge) ====================
+let listeningList = [];
+let listeningIndex = 0;
+let listeningCombo = 0;
+
+function initListeningMode() {
+  const card = document.getElementById('listening-card');
+  const finished = document.getElementById('listening-finished');
+
+  if (app.words.length < 4) {
+    card?.classList.add('hidden');
+    if (finished) {
+      finished.classList.remove('hidden');
+      finished.innerHTML = `
+        <div class="w-16 h-16 rounded-3xl bg-sky-50 dark:bg-sky-950/60 text-sky-500 flex items-center justify-center mx-auto text-2xl">
+          <i data-lucide="headphones" class="w-8 h-8"></i>
+        </div>
+        <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100">需要至少 4 個單字</h3>
+        <p class="text-xs text-slate-400 max-w-sm mx-auto">聽力四選一盲測需要至少 4 個單字來產生選擇題選項，請先新增單字或匯入 CSV 喔！</p>
+        <div class="pt-2 flex justify-center gap-3">
+          <button onclick="switchView('add')" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition flex items-center gap-1.5">
+            <i data-lucide="plus" class="w-4 h-4"></i> 前往新增單字
+          </button>
+        </div>
+      `;
+      lucide.createIcons({ root: finished });
+    }
+    return;
   }
 
-  // 句子送出審核按鈕
+  listeningList = [...app.words].sort(() => Math.random() - 0.5);
+  listeningIndex = 0;
+  listeningCombo = 0;
+
+  card?.classList.remove('hidden');
+  finished?.classList.add('hidden');
+
+  renderCurrentListening();
+}
+
+function renderCurrentListening() {
+  const card = document.getElementById('listening-card');
+  const finished = document.getElementById('listening-finished');
+  const optionsContainer = document.getElementById('listening-options');
+  const revealBox = document.getElementById('listening-reveal');
+
+  if (listeningIndex >= listeningList.length) {
+    card?.classList.add('hidden');
+    finished?.classList.remove('hidden');
+    sound.playFanfare();
+    safeConfetti({ particleCount: 100, spread: 70 });
+    app.recordStudyToday();
+    return;
+  }
+
+  revealBox?.classList.add('hidden');
+  document.getElementById('listening-progress').textContent = `${listeningIndex + 1} / ${listeningList.length}`;
+  document.getElementById('listening-combo').textContent = listeningCombo;
+
+  const currentWord = listeningList[listeningIndex];
+
+  // 播放發音
+  playListeningAudio();
+
+  // 挑選 3 個干擾選項
+  const others = app.words.filter(w => w.id !== currentWord.id);
+  const shuffledOthers = others.sort(() => Math.random() - 0.5).slice(0, 3);
+  const options = [currentWord, ...shuffledOthers].sort(() => Math.random() - 0.5);
+
+  if (optionsContainer) {
+    optionsContainer.innerHTML = options.map((opt, idx) => `
+      <button onclick="checkListeningAnswer('${opt.id}', this)" class="listening-option-btn w-full p-4 rounded-2xl bg-white/70 dark:bg-slate-800/70 hover:bg-indigo-50/80 dark:hover:bg-indigo-950/40 border border-slate-200 dark:border-slate-700 text-left text-sm font-semibold transition flex items-center justify-between shadow-sm">
+        <span class="text-slate-800 dark:text-slate-200">${opt.definition || opt.word}</span>
+        <span class="text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-400 font-mono">${idx + 1}</span>
+      </button>
+    `).join('');
+  }
+}
+
+function playListeningAudio() {
+  const currentWord = listeningList[listeningIndex];
+  if (currentWord) {
+    tts.speak(currentWord.word);
+  }
+}
+
+function checkListeningAnswer(selectedId, btnEl) {
+  const currentWord = listeningList[listeningIndex];
+  const allBtns = document.querySelectorAll('.listening-option-btn');
+  allBtns.forEach(b => b.disabled = true);
+
+  const revealBox = document.getElementById('listening-reveal');
+
+  if (selectedId === currentWord.id) {
+    // 答對
+    sound.playSuccess();
+    listeningCombo++;
+    document.getElementById('listening-combo').textContent = listeningCombo;
+    btnEl.classList.remove('bg-white/70', 'dark:bg-slate-800/70');
+    btnEl.classList.add('bg-emerald-500', 'text-white', 'border-emerald-600');
+
+    if (revealBox) {
+      revealBox.className = 'text-center p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-sm font-bold block';
+      revealBox.innerHTML = `🎉 答對了！單字是：<span class="text-lg font-black underline">${currentWord.word}</span> ${currentWord.phonetic || ''}`;
+    }
+
+    setTimeout(() => {
+      listeningIndex++;
+      renderCurrentListening();
+    }, 1200);
+  } else {
+    // 答錯
+    sound.playError();
+    listeningCombo = 0;
+    document.getElementById('listening-combo').textContent = listeningCombo;
+    btnEl.classList.add('bg-rose-500', 'text-white', 'border-rose-600');
+
+    if (revealBox) {
+      revealBox.className = 'text-center p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 text-sm font-bold block';
+      revealBox.innerHTML = `❌ 正確答案是：<span class="text-lg font-black underline">${currentWord.word}</span>（${currentWord.definition}）`;
+    }
+
+    setTimeout(() => {
+      listeningIndex++;
+      renderCurrentListening();
+    }, 2000);
+  }
+}
+function initAILabView() {
+  const select = document.getElementById('sentence-word-select');
   const gradeBtn = document.getElementById('btn-grade-sentence');
+  const storyBtn = document.getElementById('btn-generate-story');
+
+  if (app.words.length === 0) {
+    if (select) {
+      select.innerHTML = '<option value="">（單字庫目前為空，請先新增單字）</option>';
+      select.disabled = true;
+    }
+    if (gradeBtn) gradeBtn.disabled = true;
+    if (storyBtn) storyBtn.disabled = true;
+    return;
+  }
+
+  if (select) {
+    select.disabled = false;
+    select.innerHTML = app.words.map(w => `<option value="${w.word}">${w.word} — ${w.definition || ''}</option>`).join('');
+  }
+  if (gradeBtn) gradeBtn.disabled = false;
+  if (storyBtn) storyBtn.disabled = false;
+
+  // 句子送出審核按鈕
   if (gradeBtn) {
     gradeBtn.onclick = handleGradeSentence;
   }
 
   // 故事生成按鈕
-  const storyBtn = document.getElementById('btn-generate-story');
   if (storyBtn) {
     storyBtn.onclick = handleGenerateStory;
   }
@@ -1816,145 +2156,6 @@ async function handleGenerateStory() {
   }
 }
 
-// ==================== 15. CSV 匯出與匯入資料中心 ====================
-function renderDataView() {
-  // 匯出 CSV 按鈕
-  const exportBtn = document.getElementById('btn-export-csv');
-  if (exportBtn) {
-    exportBtn.onclick = () => {
-      if (app.words.length === 0) {
-        showToast('目前單字庫空空如也，無法匯出！', 'warning');
-        return;
-      }
-      CSVService.exportToCSV(app.words);
-      sound.playSuccess();
-      showToast('已成功匯出繁體中文 UTF-8 CSV 檔案！', 'success');
-    };
-  }
-
-  // 匯入 CSV 檔案選取
-  const fileInput = document.getElementById('csv-file-input');
-  const dropZone = document.getElementById('csv-drop-zone');
-  const previewCard = document.getElementById('csv-preview-card');
-  const confirmBtn = document.getElementById('btn-confirm-import');
-
-  let pendingWords = [];
-
-  const handleFile = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target.result;
-      pendingWords = CSVService.parseCSV(text);
-
-      if (pendingWords.length === 0) {
-        showToast('CSV 格式解析為空或無有效資料！', 'error');
-        return;
-      }
-
-      previewCard?.classList.remove('hidden');
-      document.getElementById('csv-preview-count').textContent = `成功解析出 ${pendingWords.length} 個單字`;
-      
-      const tbody = document.getElementById('csv-preview-tbody');
-      if (tbody) {
-        tbody.innerHTML = pendingWords.slice(0, 5).map(w => `
-          <tr class="border-b border-gray-100 dark:border-gray-800 text-xs">
-            <td class="p-2 font-bold text-gray-900 dark:text-gray-100">${w.word}</td>
-            <td class="p-2 text-gray-500">${w.partOfSpeech || '-'}</td>
-            <td class="p-2 text-gray-700 dark:text-gray-300">${w.definition || '-'}</td>
-            <td class="p-2 text-gray-500">${(w.tags || []).join(', ')}</td>
-          </tr>
-        `).join('');
-      }
-      showToast(`已載入 ${pendingWords.length} 個單字預覽`, 'info');
-    };
-    reader.readAsText(file, 'UTF-8');
-  };
-
-  if (fileInput) {
-    fileInput.onchange = (e) => {
-      const file = e.target.files[0];
-      handleFile(file);
-    };
-  }
-
-  if (dropZone) {
-    dropZone.ondragover = (e) => {
-      e.preventDefault();
-      dropZone.classList.add('border-indigo-500', 'bg-indigo-50/50');
-    };
-    dropZone.ondragleave = () => {
-      dropZone.classList.remove('border-indigo-500', 'bg-indigo-50/50');
-    };
-    dropZone.ondrop = (e) => {
-      e.preventDefault();
-      dropZone.classList.remove('border-indigo-500', 'bg-indigo-50/50');
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        handleFile(e.dataTransfer.files[0]);
-      }
-    };
-  }
-
-  if (confirmBtn) {
-    confirmBtn.onclick = () => {
-      if (pendingWords.length === 0) return;
-      const mode = document.querySelector('input[name="import-mode"]:checked')?.value || 'merge';
-
-      if (mode === 'overwrite') {
-        app.words = pendingWords;
-      } else {
-        // 合併 (以單字小寫為鍵去重或更新)
-        pendingWords.forEach(pw => {
-          const idx = app.words.findIndex(w => w.word.toLowerCase() === pw.word.toLowerCase());
-          if (idx >= 0) {
-            app.words[idx] = { ...app.words[idx], ...pw };
-          } else {
-            app.words.push(pw);
-          }
-        });
-      }
-
-      app.saveWords();
-      sound.playFanfare();
-      showToast(`🎉 成功匯入 ${pendingWords.length} 個單字！`, 'success');
-      previewCard?.classList.add('hidden');
-      if (fileInput) fileInput.value = '';
-      setTimeout(() => switchView('wordbank'), 800);
-    };
-  }
-
-  // 下載範例 CSV
-  const sampleBtn = document.getElementById('btn-download-sample-csv');
-  if (sampleBtn) {
-    sampleBtn.onclick = () => {
-      CSVService.exportToCSV(app.getDefaultWords());
-      showToast('範例 CSV 下載完成！', 'info');
-    };
-  }
-
-  // 完整 JSON 備份與還原
-  const exportJsonBtn = document.getElementById('btn-export-json');
-  if (exportJsonBtn) {
-    exportJsonBtn.onclick = () => {
-      const backupData = {
-        words: app.words,
-        settings: app.settings,
-        streak: app.streak,
-        version: '1.0',
-        exportedAt: new Date().toISOString()
-      };
-      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `echovocab_backup_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast('完整備份 JSON 已下載', 'success');
-    };
-  }
-}
-
 // ==================== 16. 設定 Modal 與全域快捷鍵 ====================
 function setupSettingsModal() {
   const openBtn = document.getElementById('btn-open-settings');
@@ -1964,18 +2165,47 @@ function setupSettingsModal() {
 
   const apiKeyInput = document.getElementById('settings-api-key');
   const modelSelect = document.getElementById('settings-model');
+  const customModelContainer = document.getElementById('custom-model-container');
+  const customModelInput = document.getElementById('settings-custom-model');
   const rateInput = document.getElementById('settings-voice-rate');
   const rateDisplay = document.getElementById('settings-voice-rate-val');
   const voiceSelect = document.getElementById('settings-voice-select');
-  const autoPlayCheck = document.getElementById('settings-autoplay-audio');
+  const soundEffectsCheck = document.getElementById('settings-sound-effects');
   const darkCheck = document.getElementById('settings-dark-mode');
+
+  // 模型下拉選單與自訂輸入連動
+  if (modelSelect) {
+    modelSelect.onchange = (e) => {
+      if (e.target.value === 'custom') {
+        customModelContainer?.classList.remove('hidden');
+        customModelInput?.focus();
+      } else {
+        customModelContainer?.classList.add('hidden');
+      }
+    };
+  }
 
   const fillInputs = () => {
     if (apiKeyInput) apiKeyInput.value = app.settings.apiKey || '';
-    if (modelSelect) modelSelect.value = app.settings.model || 'gemini-1.5-flash';
+    
+    // 檢查目前儲存的模型是否在內建選項中
+    const currentModel = app.settings.model || DEFAULT_GEMINI_MODEL;
+    const builtInValues = [DEFAULT_GEMINI_MODEL, 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+    
+    if (modelSelect) {
+      if (builtInValues.includes(currentModel)) {
+        modelSelect.value = currentModel;
+        customModelContainer?.classList.add('hidden');
+      } else {
+        modelSelect.value = 'custom';
+        customModelContainer?.classList.remove('hidden');
+        if (customModelInput) customModelInput.value = currentModel;
+      }
+    }
+
     if (rateInput) rateInput.value = app.settings.speechRate || 1.0;
     if (rateDisplay) rateDisplay.textContent = `${app.settings.speechRate || 1.0}x`;
-    if (autoPlayCheck) autoPlayCheck.checked = !!app.settings.autoPlayAudio;
+    if (soundEffectsCheck) soundEffectsCheck.checked = app.settings.soundEffects !== false;
     if (darkCheck) darkCheck.checked = !!app.settings.darkMode;
 
     // 填充語音清單
@@ -2029,8 +2259,13 @@ function setupSettingsModal() {
       }
       testApiBtn.disabled = true;
       testApiBtn.textContent = '測試連線中...';
+      let targetModel = modelSelect?.value || DEFAULT_GEMINI_MODEL;
+      if (targetModel === 'custom') {
+        targetModel = customModelInput?.value.trim() || DEFAULT_GEMINI_MODEL;
+      }
+
       try {
-        const testGemini = new GeminiService(key, modelSelect?.value || 'gemini-1.5-flash');
+        const testGemini = new GeminiService(key, targetModel);
         const res = await testGemini.callGemini('Reply with only one word: Connected');
         sound.playSuccess();
         showToast(`Gemini API 連線成功！回應: ${res.trim()}`, 'success');
@@ -2045,11 +2280,16 @@ function setupSettingsModal() {
 
   if (saveBtn) {
     saveBtn.onclick = () => {
+      let selectedModel = modelSelect?.value || DEFAULT_GEMINI_MODEL;
+      if (selectedModel === 'custom') {
+        selectedModel = customModelInput?.value.trim() || DEFAULT_GEMINI_MODEL;
+      }
+
       app.settings.apiKey = apiKeyInput?.value.trim() || '';
-      app.settings.model = modelSelect?.value || 'gemini-1.5-flash';
+      app.settings.model = selectedModel;
       app.settings.speechRate = parseFloat(rateInput?.value || '1.0');
       app.settings.voiceURI = voiceSelect?.value || '';
-      app.settings.autoPlayAudio = !!autoPlayCheck?.checked;
+      app.settings.soundEffects = !!soundEffectsCheck?.checked;
       app.settings.darkMode = !!darkCheck?.checked;
 
       app.saveSettings();
@@ -2065,26 +2305,223 @@ function setupSettingsModal() {
     };
   }
 
-  // 載入預設單字按鈕
-  const resetDefaultBtn = document.getElementById('btn-reset-default-words');
-  if (resetDefaultBtn) {
-    resetDefaultBtn.onclick = () => {
-      if (confirm('確定要載入官方精選示範單字包嗎？（不會清除你自訂的單字）')) {
-        const defaults = app.getDefaultWords();
-        defaults.forEach(d => {
-          if (!app.words.some(w => w.word.toLowerCase() === d.word.toLowerCase())) {
-            app.words.push(d);
+  // ================= 設定中的資料管理 (CSV 匯入/匯出) =================
+  const exportCsvBtn = document.getElementById('settings-btn-export-csv');
+  if (exportCsvBtn) {
+    exportCsvBtn.onclick = () => {
+      if (app.words.length === 0) {
+        showToast('目前單字庫空空如也，無法匯出！', 'warning');
+        return;
+      }
+      CSVService.exportToCSV(app.words);
+      sound.playSuccess();
+      showToast('已成功匯出繁體中文 UTF-8 CSV 單字檔！', 'success');
+    };
+  }
+
+  // 下載標準空白 CSV 範本 (純記憶體動態產生，目錄中不留任何實體檔案)
+  const downloadTemplateBtn = document.getElementById('settings-btn-download-template');
+  if (downloadTemplateBtn) {
+    downloadTemplateBtn.onclick = () => {
+      const headers = ['Word', 'Phonetic', 'PartOfSpeech', 'Definition', 'Example_EN', 'Example_ZH', 'Mnemonic', 'Tags'];
+      const csvContent = '\uFEFF' + headers.join(',') + '\r\n';
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'vocabulary_template.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast('已下載空白 CSV 範本！', 'info');
+    };
+  }
+
+  // 列印 A4 單字小抄
+  const printWordsBtn = document.getElementById('settings-btn-print-words');
+  if (printWordsBtn) {
+    printWordsBtn.onclick = () => {
+      if (app.words.length === 0) {
+        showToast('目前單字庫空空如也，請先新增單字再列印小抄喔！', 'warning');
+        return;
+      }
+      const printGrid = document.getElementById('print-words-grid');
+      const printDate = document.getElementById('print-date');
+      if (printDate) printDate.textContent = `列印時間：${new Date().toLocaleDateString('zh-TW')} (共 ${app.words.length} 字)`;
+
+      if (printGrid) {
+        printGrid.innerHTML = app.words.map((w, idx) => `
+          <div class="grid grid-cols-12 border-b border-gray-300 py-1.5 break-inside-avoid">
+            <div class="col-span-5 pr-3">
+              <span class="font-bold text-sm mr-1.5">${idx + 1}. ${w.word}</span>
+              ${w.partOfSpeech ? `<span class="italic text-gray-600 font-serif mr-1">[${w.partOfSpeech}]</span>` : ''}
+              ${w.phonetic ? `<span class="text-gray-500 font-mono text-[11px]">${w.phonetic}</span>` : ''}
+            </div>
+            <div class="col-span-1 text-center text-gray-300 select-none">|</div>
+            <div class="col-span-6 pl-2">
+              <div class="font-semibold text-gray-900">${w.definition || '-'}</div>
+              ${w.example_en ? `<div class="text-gray-600 text-[10px] italic mt-0.5">${w.example_en}</div>` : ''}
+              ${w.mnemonic ? `<div class="text-amber-800 text-[10px] mt-0.5">💡 口訣：${w.mnemonic}</div>` : ''}
+            </div>
+          </div>
+        `).join('');
+      }
+      modal?.classList.add('hidden');
+      window.print();
+    };
+  }
+
+  // JSON 全量備份
+  const exportJsonBtn = document.getElementById('settings-btn-export-json');
+  if (exportJsonBtn) {
+    exportJsonBtn.onclick = () => {
+      const backupData = {
+        words: app.words,
+        settings: app.settings,
+        streak: app.streak,
+        version: '1.0',
+        exportedAt: new Date().toISOString()
+      };
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `echovocab_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('完整備份 JSON 已下載', 'success');
+    };
+  }
+
+  // CSV 匯入處理
+  const csvFileInput = document.getElementById('settings-csv-file-input');
+  const previewBox = document.getElementById('settings-csv-preview');
+  const confirmImportBtn = document.getElementById('settings-btn-confirm-import');
+  let pendingImportWords = [];
+
+  if (csvFileInput) {
+    csvFileInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const text = evt.target.result;
+        pendingImportWords = CSVService.parseCSV(text);
+
+        if (pendingImportWords.length === 0) {
+          showToast('CSV 格式解析為空或無有效單字！', 'error');
+          return;
+        }
+
+        previewBox?.classList.remove('hidden');
+        document.getElementById('settings-preview-count').textContent = `成功解析出 ${pendingImportWords.length} 個單字`;
+        
+        const tbody = document.getElementById('settings-preview-tbody');
+        if (tbody) {
+          tbody.innerHTML = pendingImportWords.slice(0, 5).map(w => `
+            <tr class="border-b border-slate-200 dark:border-slate-700">
+              <td class="p-1 font-bold text-slate-800 dark:text-slate-100">${w.word}</td>
+              <td class="p-1 text-slate-600 dark:text-slate-300 truncate max-w-[120px]">${w.definition || '-'}</td>
+              <td class="p-1 text-slate-400">${(w.tags || []).join(', ')}</td>
+            </tr>
+          `).join('');
+        }
+        showToast(`已載入 ${pendingImportWords.length} 個單字預覽，請確認匯入方式`, 'info');
+      };
+      reader.readAsText(file, 'UTF-8');
+    };
+  }
+
+  if (confirmImportBtn) {
+    confirmImportBtn.onclick = () => {
+      if (pendingImportWords.length === 0) return;
+      const mode = document.querySelector('input[name="settings-import-mode"]:checked')?.value || 'merge';
+
+      if (mode === 'overwrite') {
+        app.words = pendingImportWords;
+      } else {
+        pendingImportWords.forEach(pw => {
+          const idx = app.words.findIndex(w => w.word.toLowerCase() === pw.word.toLowerCase());
+          if (idx >= 0) {
+            app.words[idx] = { ...app.words[idx], ...pw };
+          } else {
+            app.words.push(pw);
           }
         });
+      }
+
+      app.saveWords();
+      sound.playFanfare();
+      showToast(`🎉 成功匯入 ${pendingImportWords.length} 個單字！`, 'success');
+      previewBox?.classList.add('hidden');
+      if (csvFileInput) csvFileInput.value = '';
+      modal?.classList.add('hidden');
+      renderCurrentView();
+    };
+  }
+
+  // 清空所有單字資料按鈕
+  const clearAllBtn = document.getElementById('btn-clear-all-words');
+  if (clearAllBtn) {
+    clearAllBtn.onclick = () => {
+      if (confirm('確定要清空目前所有的單字庫嗎？此操作無法撤銷！')) {
+        app.words = [];
         app.saveWords();
-        showToast('已成功匯入精選示範單字！', 'success');
-        renderWordBank();
+        showToast('已清空所有單字庫資料，目前為純淨空白狀態。', 'info');
+        renderCurrentView();
       }
     };
   }
 }
 
-// 全域快捷鍵
+// ==================== 18. 常見基礎詞庫版本按需導入 ====================
+function importPresetVocab(type) {
+  const presets = {
+    daily: [
+      { word: 'procrastinate', phonetic: '/prəʊˈkræstɪneɪt/', partOfSpeech: 'v.', definition: '拖延；推遲', example_en: 'Don’t procrastinate on your daily study!', example_zh: '別再拖延你每日的學習了！', mnemonic: 'pro(前)+cras(明天)->永遠拖到明天', tags: ['生活日常', '習慣'] },
+      { word: 'spontaneous', phonetic: '/spɒnˈteɪniəs/', partOfSpeech: 'adj.', definition: '自發的；隨性的；非籌劃的', example_en: 'We took a spontaneous road trip on the weekend.', example_zh: '我們週末來了一場說走就走的公路旅行。', mnemonic: '諧音「死奔騰」->隨性奔放，自然而然', tags: ['生活日常', '性格'] },
+      { word: 'commute', phonetic: '/kəˈmjuːt/', partOfSpeech: 'v./n.', definition: '通勤；上下班路程', example_en: 'It takes 40 minutes to commute to work.', example_zh: '通勤上班需要花費 40 分鐘。', mnemonic: 'com(共同)+mute(改變)->每天共同變換地點', tags: ['生活日常', '通勤'] },
+      { word: 'beverage', phonetic: '/ˈbevərɪdʒ/', partOfSpeech: 'n.', definition: '飲料 (尤指水以外的飲品)', example_en: 'Hot beverages will be served after the meal.', example_zh: '餐後將供應熱飲。', mnemonic: 'beer(啤酒)+average(平均)->生活常喝的飲料', tags: ['生活日常', '飲食'] }
+    ],
+    toeic: [
+      { word: 'collaborate', phonetic: '/kəˈlæbəreɪt/', partOfSpeech: 'v.', definition: '合作；協作', example_en: 'Our teams collaborate closely on international projects.', example_zh: '我們的團隊在跨國專案上緊密合作。', mnemonic: 'col(共同)+labor(勞動)->一起工作就是合作', tags: ['多益必備', '職場'] },
+      { word: 'negotiate', phonetic: '/nɪˈɡəʊʃieɪt/', partOfSpeech: 'v.', definition: '協商；談判', example_en: 'We successfully negotiated a better contract price.', example_zh: '我們成功談判爭取到更好的合約價格。', mnemonic: 'neg(否定)+otium(閒暇)->工作不閒著，積極談判', tags: ['多益必備', '商務'] },
+      { word: 'eligible', phonetic: '/ˈelɪdʒəbl/', partOfSpeech: 'adj.', definition: '有資格的；符合條件的', example_en: 'Employees who pass probation are eligible for the bonus.', example_zh: '通過試用期的員工有資格獲得獎金。', mnemonic: 'elect(選出)+able(能)->能被選中的，就是合格的', tags: ['多益必備', '人事'] },
+      { word: 'reimburse', phonetic: '/ˌriːɪmˈbɜːs/', partOfSpeech: 'v.', definition: '核銷；報銷；償還', example_en: 'The company will reimburse your travel expenses.', example_zh: '公司將報銷你的差旅費用。', mnemonic: 're(再)+in(進)+purse(錢包)->錢重新回到錢包，就是報銷', tags: ['多益必備', '財務'] }
+    ],
+    travel: [
+      { word: 'itinerary', phonetic: '/aɪˈtɪnərəri/', partOfSpeech: 'n.', definition: '旅行行程；行程表', example_en: 'Please review our flight and hotel itinerary.', example_zh: '請檢視我們的航班與飯店行程表。', mnemonic: '諧音「愛聽你的」->行程規劃愛聽你的意見', tags: ['出國旅遊', '行程'] },
+      { word: 'boarding', phonetic: '/ˈbɔːdɪŋ/', partOfSpeech: 'n.', definition: '登機；登船', example_en: 'Boarding for Flight 302 will commence shortly.', example_zh: '302 號航班即將開始登機。', mnemonic: 'board(甲板/登機牌)->登上飛機', tags: ['出國旅遊', '機場'] },
+      { word: 'souvenir', phonetic: '/ˌsuːvəˈnɪə/', partOfSpeech: 'n.', definition: '紀念品；伴手禮', example_en: 'I bought a handcrafted souvenir for my friend.', example_zh: '我為朋友買了一件手工紀念品。', mnemonic: 'sou(手)+venir(到來)->帶到手邊的回憶物品', tags: ['出國旅遊', '購物'] },
+      { word: 'accommodation', phonetic: '/əˌkɒməˈdeɪʃn/', partOfSpeech: 'n.', definition: '住宿；膳宿', example_en: 'We booked luxury hotel accommodation in downtown Tokyo.', example_zh: '我們在東京市中心預訂了豪華飯店住宿。', mnemonic: 'ac(加強)+commod(合適/便利)->給予旅人舒適安歇的住所', tags: ['出國旅遊', '住宿'] }
+    ]
+  };
+
+  const list = presets[type];
+  if (!list) return;
+
+  let added = 0;
+  list.forEach(item => {
+    const exists = app.words.some(w => w.word.toLowerCase() === item.word.toLowerCase());
+    if (!exists) {
+      app.words.push({
+        id: 'w_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+        ...item,
+        createdAt: new Date().toISOString(),
+        srs: { repetitions: 0, interval: 1, easeFactor: 2.5, nextReviewDate: new Date().toISOString().split('T')[0], masteryLevel: 0 }
+      });
+      added++;
+    }
+  });
+
+  app.saveWords();
+  sound.playFanfare();
+  showToast(`🎉 成功導入 ${added} 個精選單字！`, 'success');
+  
+  const modal = document.getElementById('settings-modal');
+  modal?.classList.add('hidden');
+  renderCurrentView();
+}
 function setupGlobalShortcuts() {
   window.addEventListener('keydown', (e) => {
     // 若在輸入框內打字則不觸發單鍵快捷鍵

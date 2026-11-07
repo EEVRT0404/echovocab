@@ -20,7 +20,7 @@ body {
 
 /* 玻璃擬態與柔和陰影 */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.6);
@@ -28,7 +28,7 @@ body {
 }
 
 .dark .glass-panel {
-  background: rgba(30, 41, 59, 0.78);
+  background: rgba(30, 41, 59, 0.82);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -95,6 +95,31 @@ body {
   animation: pulseGlow 2.5s infinite;
 }
 
+/* 聲波跳動動畫 (聽力測驗用) */
+.sound-wave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+}
+.wave-bar {
+  width: 4px;
+  height: 100%;
+  background-color: #6366f1;
+  border-radius: 9999px;
+  animation: wave 1.2s ease-in-out infinite;
+}
+.wave-bar:nth-child(1) { animation-delay: 0.1s; }
+.wave-bar:nth-child(2) { animation-delay: 0.3s; }
+.wave-bar:nth-child(3) { animation-delay: 0.5s; }
+.wave-bar:nth-child(4) { animation-delay: 0.2s; }
+.wave-bar:nth-child(5) { animation-delay: 0.4s; }
+
+@keyframes wave {
+  0%, 100% { height: 6px; }
+  50% { height: 24px; }
+}
+
 /* 自訂滑動條 */
 ::-webkit-scrollbar {
   width: 6px;
@@ -128,27 +153,32 @@ body {
   opacity: 0.25;
 }
 
-/* 單字拼字遮罩方塊 */
-.letter-box {
-  transition: all 0.2s ease;
-}
-
-.letter-box:focus {
-  transform: scale(1.05);
-}
-
 /* 音標專屬字體優化 */
 .phonetic-text {
   font-family: 'Lucida Sans Unicode', 'Arial Unicode MS', 'DejaVu Sans', sans-serif;
 }
 
-/* 打字機效果光標 */
-.typing-cursor::after {
-  content: '|';
-  animation: blink 1s step-end infinite;
+/* ================= A4 列印單字小抄專屬樣式 ================= */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  header, nav, #toast-container, .ambient-orb, button, .no-print {
+    display: none !important;
+  }
+  main {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-page {
+    page-break-after: always;
+  }
 }
-
-@keyframes blink {
-  from, to { opacity: 1; }
-  50% { opacity: 0; }
+.print-only {
+  display: none;
 }
