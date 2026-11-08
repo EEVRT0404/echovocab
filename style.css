@@ -249,7 +249,7 @@ img {
     display: none;
   }
 
-  #btn-google-sign-out {
+  #google-account-menu > div:first-child {
     max-width: 7rem;
   }
 

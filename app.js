@@ -890,7 +890,11 @@ function setupFirebaseAuth() {
   const status = document.getElementById('cloud-auth-status');
   const syncStatus = document.getElementById('cloud-sync-status');
   const signInButton = document.getElementById('btn-google-sign-in');
+  const accountMenu = document.getElementById('google-account-menu');
+  const accountMenuToggle = document.getElementById('google-account-menu-toggle');
+  const accountDropdown = document.getElementById('google-account-dropdown');
   const signOutButton = document.getElementById('btn-google-sign-out');
+  const cloudSettingsButton = document.getElementById('btn-cloud-settings');
   const userAvatar = document.getElementById('google-user-avatar');
   const userAvatarFallback = document.getElementById('google-user-avatar-fallback');
   const userName = document.getElementById('google-user-name');
@@ -901,6 +905,11 @@ function setupFirebaseAuth() {
   const mergeButton = document.getElementById('btn-cloud-merge');
   let currentUser = null;
   let cloudHasData = false;
+
+  const closeAccountMenu = () => {
+    accountDropdown?.classList.add('hidden');
+    accountMenuToggle?.setAttribute('aria-expanded', 'false');
+  };
 
   const updateStatus = (user) => {
     currentUser = user;
@@ -928,18 +937,15 @@ function setupFirebaseAuth() {
         userAvatar?.classList.add('hidden');
         userAvatarFallback?.classList.remove('hidden');
       }
-      signOutButton?.setAttribute('aria-label', `以 ${displayName} 登入，點擊登出`);
-      signOutButton?.setAttribute('title', `已登入 ${displayName}，點擊登出`);
       signInButton?.classList.add('hidden');
-      signOutButton?.classList.remove('hidden');
-      signOutButton?.classList.add('flex');
+      accountMenu?.classList.remove('hidden');
       if (syncButton) syncButton.disabled = false;
       if (syncStatus) syncStatus.textContent = '已登入。按「檢查雲端資料」後，選擇本機／雲端資料的處理方式。';
     } else {
       if (status) status.textContent = '尚未登入 Google 帳號。';
       signInButton?.classList.remove('hidden');
-      signOutButton?.classList.add('hidden');
-      signOutButton?.classList.remove('flex');
+      accountMenu?.classList.add('hidden');
+      closeAccountMenu();
       userAvatar?.classList.add('hidden');
       userAvatarFallback?.classList.remove('hidden');
       if (syncButton) syncButton.disabled = true;
@@ -1083,12 +1089,41 @@ function setupFirebaseAuth() {
 
   if (signOutButton) {
     signOutButton.onclick = async () => {
+      closeAccountMenu();
       try {
         await window.firebaseCloud.signOut();
         showToast('已登出 Google 帳號。', 'info');
       } catch (error) {
         showToast(`Google 登出失敗：${error.message}`, 'error');
       }
+    };
+  }
+
+  if (accountMenuToggle) {
+    accountMenuToggle.onclick = () => {
+      const isExpanded = accountMenuToggle.getAttribute('aria-expanded') === 'true';
+      accountDropdown?.classList.toggle('hidden', isExpanded);
+      accountMenuToggle.setAttribute('aria-expanded', String(!isExpanded));
+    };
+  }
+
+  if (accountMenu) {
+    document.addEventListener('click', (event) => {
+      if (!accountMenu.contains(event.target)) closeAccountMenu();
+    });
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeAccountMenu();
+  });
+
+  if (cloudSettingsButton) {
+    cloudSettingsButton.onclick = () => {
+      closeAccountMenu();
+      document.getElementById('btn-open-settings')?.click();
+      window.setTimeout(() => {
+        document.getElementById('cloud-settings-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
     };
   }
 
