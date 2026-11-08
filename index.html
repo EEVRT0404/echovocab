@@ -89,7 +89,7 @@
       </button>
     </nav>
 
-    <!-- 右側功能：連續打卡 + 設定 -->
+    <!-- 右側功能：連續打卡、Google 登入與設定 -->
     <div class="flex items-center gap-3">
       <!-- 連續打卡 Badge -->
       <div title="連續學習打卡天數" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 font-bold text-xs sm:text-sm">
@@ -97,10 +97,20 @@
         <span><span id="nav-streak">1</span> 天</span>
       </div>
 
-      <!-- 設定按鈕 -->
-      <button id="btn-open-settings" title="系統與 API 設定" class="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 transition shadow-sm">
-        <i data-lucide="settings" class="w-5 h-5"></i>
-      </button>
+      <div class="flex items-center gap-2">
+        <button type="button" id="btn-google-sign-in" title="使用 Google 登入" aria-label="使用 Google 登入" class="flex items-center gap-1.5 px-2 py-2 sm:px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-sm">
+          <i data-lucide="user-round" class="w-4 h-4"></i>
+          <span>登入</span>
+        </button>
+        <button type="button" id="btn-google-sign-out" title="登出 Google 帳號" aria-label="登出 Google 帳號" class="hidden flex items-center gap-1.5 px-2 py-2 sm:px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:text-indigo-600 transition shadow-sm">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
+          <span>登出</span>
+        </button>
+        <!-- 設定按鈕 -->
+        <button id="btn-open-settings" title="系統與 API 設定" class="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 transition shadow-sm">
+          <i data-lucide="settings" class="w-5 h-5"></i>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -824,12 +834,6 @@
             <p id="cloud-auth-status" class="text-sm text-slate-600 dark:text-slate-300">尚未登入 Google 帳號。</p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <button type="button" id="btn-google-sign-in" class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition">
-              使用 Google 登入
-            </button>
-            <button type="button" id="btn-google-sign-out" class="hidden px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-xs transition">
-              登出
-            </button>
             <button type="button" id="btn-cloud-sync" disabled class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs transition">
               檢查雲端資料
             </button>

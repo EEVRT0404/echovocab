@@ -6,7 +6,7 @@
 ## 核心亮點功能
 
 ### Google 登入與雲端備份
-- 在「系統與 AI 設定」使用 Google 帳號登入，再按「檢查雲端資料」選擇上傳、下載或合併單字與學習打卡。
+- 使用頁面右上角的 Google 登入按鈕登入，再到「系統與 AI 設定」按「檢查雲端資料」選擇上傳、下載或合併單字與學習打卡。
 - 合併時以單字 ID 去重；同 ID 衝突採用雲端版本。Gemini API Key 與其他設定不會上傳。
 - 同步目前需手動執行。請先在 Firebase Authentication 啟用 Google 登入、授權網站網域，並在 Cloud Firestore 發布僅允許使用者存取 `users/{uid}/data/{doc}` 的安全規則。
 
