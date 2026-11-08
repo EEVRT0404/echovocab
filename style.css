@@ -245,9 +245,17 @@ img {
     gap: 0.5rem;
   }
 
-  #btn-google-sign-in span,
-  #btn-google-sign-out span {
+  #btn-google-sign-in span {
     display: none;
+  }
+
+  #btn-google-sign-out {
+    max-width: 7rem;
+  }
+
+  #google-user-name {
+    display: block;
+    max-width: 4.5rem;
   }
 
   body > main.w-full {

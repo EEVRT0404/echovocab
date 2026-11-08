@@ -891,6 +891,9 @@ function setupFirebaseAuth() {
   const syncStatus = document.getElementById('cloud-sync-status');
   const signInButton = document.getElementById('btn-google-sign-in');
   const signOutButton = document.getElementById('btn-google-sign-out');
+  const userAvatar = document.getElementById('google-user-avatar');
+  const userAvatarFallback = document.getElementById('google-user-avatar-fallback');
+  const userName = document.getElementById('google-user-name');
   const syncButton = document.getElementById('btn-cloud-sync');
   const syncActions = document.getElementById('cloud-sync-actions');
   const uploadButton = document.getElementById('btn-cloud-upload');
@@ -906,15 +909,39 @@ function setupFirebaseAuth() {
     if (downloadButton) downloadButton.disabled = true;
     if (mergeButton) mergeButton.disabled = true;
     if (user) {
-      if (status) status.textContent = `已登入：${user.email || user.displayName || 'Google 帳號'}`;
+      const displayName = user.displayName || user.email?.split('@')[0] || 'Google 帳號';
+      if (status) status.textContent = `已登入：${user.displayName || user.email || 'Google 帳號'}`;
+      if (userName) {
+        userName.textContent = displayName;
+        userName.title = displayName;
+      }
+      if (user.photoURL && userAvatar) {
+        userAvatar.src = user.photoURL;
+        userAvatar.alt = `${displayName} 的 Google 頭像`;
+        userAvatar.classList.remove('hidden');
+        userAvatarFallback?.classList.add('hidden');
+        userAvatar.onerror = () => {
+          userAvatar.classList.add('hidden');
+          userAvatarFallback?.classList.remove('hidden');
+        };
+      } else {
+        userAvatar?.classList.add('hidden');
+        userAvatarFallback?.classList.remove('hidden');
+      }
+      signOutButton?.setAttribute('aria-label', `以 ${displayName} 登入，點擊登出`);
+      signOutButton?.setAttribute('title', `已登入 ${displayName}，點擊登出`);
       signInButton?.classList.add('hidden');
       signOutButton?.classList.remove('hidden');
+      signOutButton?.classList.add('flex');
       if (syncButton) syncButton.disabled = false;
       if (syncStatus) syncStatus.textContent = '已登入。按「檢查雲端資料」後，選擇本機／雲端資料的處理方式。';
     } else {
       if (status) status.textContent = '尚未登入 Google 帳號。';
       signInButton?.classList.remove('hidden');
       signOutButton?.classList.add('hidden');
+      signOutButton?.classList.remove('flex');
+      userAvatar?.classList.add('hidden');
+      userAvatarFallback?.classList.remove('hidden');
       if (syncButton) syncButton.disabled = true;
       if (syncActions) syncActions.classList.add('hidden');
       if (syncStatus) syncStatus.textContent = '登入後可手動同步單字與學習打卡；Gemini API Key 不會上傳。';
