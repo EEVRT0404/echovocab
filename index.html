@@ -111,14 +111,14 @@
         </button>
         <div id="google-account-menu" class="hidden relative">
           <div class="flex items-center gap-1">
-            <div class="flex items-center gap-2 min-w-0 max-w-40 px-1 py-1 text-slate-700 dark:text-slate-200 text-xs font-bold">
+            <button type="button" id="google-account-profile-toggle" aria-label="開啟帳號選單" aria-haspopup="true" aria-expanded="false" class="flex items-center gap-2 min-w-0 max-w-40 px-1 py-1 rounded-lg text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
               <img id="google-user-avatar" alt="" class="hidden w-7 h-7 rounded-full object-cover shrink-0">
               <svg id="google-user-avatar-fallback" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="w-7 h-7 shrink-0">
                 <circle cx="12" cy="8" r="3.5"></circle>
                 <path d="M5 20a7 7 0 0 1 14 0"></path>
               </svg>
               <span id="google-user-name" class="truncate max-w-24 sm:max-w-28">Google 帳號</span>
-            </div>
+            </button>
             <button type="button" id="google-account-menu-toggle" aria-label="開啟帳號選單" aria-haspopup="true" aria-expanded="false" class="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
                 <path d="m6 9 6 6 6-6"></path>
@@ -1139,6 +1139,6 @@
 
   <!-- 載入應用核心腳本 -->
   <script type="module" src="firebase.js?v=cloud-sync-3"></script>
-  <script src="app.js?v=cloud-sync-5"></script>
+  <script src="app.js?v=cloud-sync-6"></script>
 </body>
 </html>
