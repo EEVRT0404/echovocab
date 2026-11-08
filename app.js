@@ -891,7 +891,6 @@ function setupFirebaseAuth() {
   const syncStatus = document.getElementById('cloud-sync-status');
   const signInButton = document.getElementById('btn-google-sign-in');
   const accountMenu = document.getElementById('google-account-menu');
-  const accountProfileToggle = document.getElementById('google-account-profile-toggle');
   const accountMenuToggle = document.getElementById('google-account-menu-toggle');
   const accountDropdown = document.getElementById('google-account-dropdown');
   const signOutButton = document.getElementById('btn-google-sign-out');
@@ -909,14 +908,12 @@ function setupFirebaseAuth() {
 
   const closeAccountMenu = () => {
     accountDropdown?.classList.add('hidden');
-    accountProfileToggle?.setAttribute('aria-expanded', 'false');
     accountMenuToggle?.setAttribute('aria-expanded', 'false');
   };
 
   const toggleAccountMenu = () => {
     const isExpanded = accountMenuToggle?.getAttribute('aria-expanded') === 'true';
     accountDropdown?.classList.toggle('hidden', isExpanded);
-    accountProfileToggle?.setAttribute('aria-expanded', String(!isExpanded));
     accountMenuToggle?.setAttribute('aria-expanded', String(!isExpanded));
   };
 
@@ -1108,13 +1105,7 @@ function setupFirebaseAuth() {
     };
   }
 
-  if (accountMenuToggle) {
-    accountMenuToggle.onclick = toggleAccountMenu;
-  }
-
-  if (accountProfileToggle) {
-    accountProfileToggle.onclick = toggleAccountMenu;
-  }
+  if (accountMenuToggle) accountMenuToggle.onclick = toggleAccountMenu;
 
   if (accountMenu) {
     document.addEventListener('click', (event) => {
