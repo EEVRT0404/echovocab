@@ -878,12 +878,89 @@ document.addEventListener('DOMContentLoaded', () => {
   // 初始化視圖
   setupNavigation();
   setupSettingsModal();
+  setupFirebaseAuth();
   setupGlobalShortcuts();
   renderCurrentView();
 
   // 激勵每日金句
   renderQuote();
 });
+
+function setupFirebaseAuth() {
+  const status = document.getElementById('cloud-auth-status');
+  const signInButton = document.getElementById('btn-google-sign-in');
+  const signOutButton = document.getElementById('btn-google-sign-out');
+
+  const updateStatus = (user) => {
+    if (user) {
+      if (status) status.textContent = `已登入：${user.email || user.displayName || 'Google 帳號'}`;
+      signInButton?.classList.add('hidden');
+      signOutButton?.classList.remove('hidden');
+    } else {
+      if (status) status.textContent = '尚未登入 Google 帳號。';
+      signInButton?.classList.remove('hidden');
+      signOutButton?.classList.add('hidden');
+    }
+  };
+
+  const connectAuth = () => {
+    if (window.firebaseCloudError) {
+      if (status) status.textContent = `Firebase 初始化失敗：${window.firebaseCloudError.message}`;
+      if (signInButton) signInButton.disabled = true;
+      return;
+    }
+
+    if (!window.firebaseCloud) {
+      if (status) status.textContent = 'Firebase 載入中，請稍後重試。';
+      return;
+    }
+
+    window.firebaseCloud.onAuthStateChanged(
+      updateStatus,
+      (error) => {
+        if (status) status.textContent = `無法取得登入狀態：${error.message}`;
+        showToast(`Google 登入狀態錯誤：${error.message}`, 'error');
+      }
+    );
+  };
+
+  window.addEventListener('firebase-cloud-ready', connectAuth, { once: true });
+
+  if (window.firebaseCloud || window.firebaseCloudError) {
+    connectAuth();
+  }
+
+  if (signInButton) {
+    signInButton.onclick = async () => {
+      if (!window.firebaseCloud) {
+        showToast('Firebase 尚未載入，請確認網路連線後重新整理頁面。', 'error');
+        return;
+      }
+
+      signInButton.disabled = true;
+      try {
+        await window.firebaseCloud.signInWithGoogle();
+      } catch (error) {
+        if (error.code !== 'auth/popup-closed-by-user') {
+          showToast(`Google 登入失敗：${error.message}`, 'error');
+        }
+      } finally {
+        signInButton.disabled = false;
+      }
+    };
+  }
+
+  if (signOutButton) {
+    signOutButton.onclick = async () => {
+      try {
+        await window.firebaseCloud.signOut();
+        showToast('已登出 Google 帳號。', 'info');
+      } catch (error) {
+        showToast(`Google 登出失敗：${error.message}`, 'error');
+      }
+    };
+  }
+}
 
 function applyTheme(isDark) {
   if (isDark) {
