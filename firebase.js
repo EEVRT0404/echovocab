@@ -6,7 +6,13 @@ import {
   signInWithPopup,
   signOut
 } from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js';
-import { getFirestore } from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-firestore.js';
+import {
+  doc,
+  getDoc,
+  getFirestore,
+  serverTimestamp,
+  setDoc
+} from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyByXUWRfzXHkGAdaugxQtgBfig1_PAEfg0',
@@ -21,13 +27,22 @@ try {
   const firebaseApp = initializeApp(firebaseConfig);
   const auth = getAuth(firebaseApp);
   const provider = new GoogleAuthProvider();
+  const db = getFirestore(firebaseApp);
 
   window.firebaseCloud = {
     auth,
-    db: getFirestore(firebaseApp),
+    db,
     onAuthStateChanged: (callback) => onAuthStateChanged(auth, callback),
     signInWithGoogle: () => signInWithPopup(auth, provider),
-    signOut: () => signOut(auth)
+    signOut: () => signOut(auth),
+    getUserData: async (uid) => {
+      const snapshot = await getDoc(doc(db, 'users', uid, 'data', 'main'));
+      return snapshot.exists() ? snapshot.data() : null;
+    },
+    setUserData: (uid, data) => setDoc(doc(db, 'users', uid, 'data', 'main'), {
+      ...data,
+      updatedAt: serverTimestamp()
+    })
   };
 } catch (error) {
   window.firebaseCloudError = error;

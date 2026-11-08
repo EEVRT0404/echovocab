@@ -5,6 +5,11 @@
 
 ## 核心亮點功能
 
+### Google 登入與雲端備份
+- 在「系統與 AI 設定」使用 Google 帳號登入，再按「檢查雲端資料」選擇上傳、下載或合併單字與學習打卡。
+- 合併時以單字 ID 去重；同 ID 衝突採用雲端版本。Gemini API Key 與其他設定不會上傳。
+- 同步目前需手動執行。請先在 Firebase Authentication 啟用 Google 登入、授權網站網域，並在 Cloud Firestore 發布僅允許使用者存取 `users/{uid}/data/{doc}` 的安全規則。
+
 ### 1. Gemini AI 智慧擴充與自訂新增
 - **AI 智能秒級解析**：輸入一個或多個生詞、片語甚至整段句子，Gemini 自動生成：
   - 國際音標 (IPA)

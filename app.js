@@ -888,20 +888,127 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function setupFirebaseAuth() {
   const status = document.getElementById('cloud-auth-status');
+  const syncStatus = document.getElementById('cloud-sync-status');
   const signInButton = document.getElementById('btn-google-sign-in');
   const signOutButton = document.getElementById('btn-google-sign-out');
+  const syncButton = document.getElementById('btn-cloud-sync');
+  const syncActions = document.getElementById('cloud-sync-actions');
+  const uploadButton = document.getElementById('btn-cloud-upload');
+  const downloadButton = document.getElementById('btn-cloud-download');
+  const mergeButton = document.getElementById('btn-cloud-merge');
+  let currentUser = null;
+  let cloudHasData = false;
 
   const updateStatus = (user) => {
+    currentUser = user;
+    cloudHasData = false;
+    if (syncActions) syncActions.classList.add('hidden');
+    if (downloadButton) downloadButton.disabled = true;
+    if (mergeButton) mergeButton.disabled = true;
     if (user) {
       if (status) status.textContent = `已登入：${user.email || user.displayName || 'Google 帳號'}`;
       signInButton?.classList.add('hidden');
       signOutButton?.classList.remove('hidden');
+      if (syncButton) syncButton.disabled = false;
+      if (syncStatus) syncStatus.textContent = '已登入。按「檢查雲端資料」後，選擇本機／雲端資料的處理方式。';
     } else {
       if (status) status.textContent = '尚未登入 Google 帳號。';
       signInButton?.classList.remove('hidden');
       signOutButton?.classList.add('hidden');
+      if (syncButton) syncButton.disabled = true;
+      if (syncActions) syncActions.classList.add('hidden');
+      if (syncStatus) syncStatus.textContent = '登入後可手動同步單字與學習打卡；Gemini API Key 不會上傳。';
     }
   };
+
+  const readCloudData = async () => {
+    const data = await window.firebaseCloud.getUserData(currentUser.uid);
+    if (data === null) return null;
+    if (
+      !Array.isArray(data.words) ||
+      data.words.some((word) => !word || typeof word.id !== 'string') ||
+      !data.streak ||
+      typeof data.streak !== 'object' ||
+      (data.streak.lastStudyDate !== undefined && typeof data.streak.lastStudyDate !== 'string')
+    ) {
+      throw new Error('雲端資料格式不正確，為保護資料已停止同步。');
+    }
+    return data;
+  };
+
+  const setBusy = (busy) => {
+    [syncButton, uploadButton, downloadButton, mergeButton].forEach((button) => {
+      if (button) button.disabled = busy || (button === syncButton ? !currentUser : !cloudHasData && button !== uploadButton);
+    });
+  };
+
+  const withSyncError = async (operation, successMessage) => {
+    if (!currentUser) {
+      showToast('請先登入 Google 帳號。', 'warning');
+      return;
+    }
+
+    setBusy(true);
+    if (syncStatus) syncStatus.textContent = '同步處理中…';
+    try {
+      await operation();
+      if (syncStatus) syncStatus.textContent = successMessage;
+      if (syncActions) syncActions.classList.add('hidden');
+      showToast(successMessage, 'success');
+    } catch (error) {
+      console.error('雲端同步失敗', error);
+      const message = error.code === 'permission-denied'
+        ? 'Firestore 拒絕存取，請確認已發布允許 users/{uid}/data/{doc} 的規則。'
+        : `雲端同步失敗：${error.message}`;
+      if (syncStatus) syncStatus.textContent = message;
+      showToast(message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const localData = () => ({
+    words: app.words,
+    streak: {
+      streak: app.streak,
+      lastStudyDate: app.lastStudyDate
+    }
+  });
+
+  const replaceLocalData = (data) => {
+    app.words = data.words;
+    app.streak = Number.isFinite(data.streak.streak) ? data.streak.streak : 1;
+    app.lastStudyDate = typeof data.streak.lastStudyDate === 'string' ? data.streak.lastStudyDate : '';
+    app.saveWords();
+    app.saveStreak();
+    renderCurrentView();
+  };
+
+  const uploadLocalData = () => withSyncError(async () => {
+    await window.firebaseCloud.setUserData(currentUser.uid, localData());
+    cloudHasData = true;
+  }, '已將本機單字與打卡資料上傳到雲端。');
+
+  const downloadCloudData = () => withSyncError(async () => {
+    const data = await readCloudData();
+    if (!data) throw new Error('找不到雲端資料，請先上傳或合併本機資料。');
+    replaceLocalData(data);
+  }, '已用雲端資料取代本機單字與打卡資料。');
+
+  const mergeData = () => withSyncError(async () => {
+    const cloudData = await readCloudData();
+    if (!cloudData) throw new Error('找不到雲端資料，請先上傳本機資料。');
+    const mergedWords = new Map(app.words.map((word) => [word.id, word]));
+    cloudData.words.forEach((word) => mergedWords.set(word.id, word));
+    const localStreak = localData().streak;
+    const mergedStreak = cloudData.streak.lastStudyDate >= localStreak.lastStudyDate
+      ? cloudData.streak
+      : localStreak;
+    const merged = { words: [...mergedWords.values()], streak: mergedStreak };
+    replaceLocalData(merged);
+    await window.firebaseCloud.setUserData(currentUser.uid, merged);
+    cloudHasData = true;
+  }, '已合併本機與雲端資料（相同 ID 的單字以雲端版本為準）。');
 
   const connectAuth = () => {
     if (window.firebaseCloudError) {
@@ -915,13 +1022,10 @@ function setupFirebaseAuth() {
       return;
     }
 
-    window.firebaseCloud.onAuthStateChanged(
-      updateStatus,
-      (error) => {
-        if (status) status.textContent = `無法取得登入狀態：${error.message}`;
-        showToast(`Google 登入狀態錯誤：${error.message}`, 'error');
-      }
-    );
+    window.firebaseCloud.onAuthStateChanged(updateStatus, (error) => {
+      if (status) status.textContent = `無法取得登入狀態：${error.message}`;
+      showToast(`Google 登入狀態錯誤：${error.message}`, 'error');
+    });
   };
 
   window.addEventListener('firebase-cloud-ready', connectAuth, { once: true });
@@ -960,6 +1064,44 @@ function setupFirebaseAuth() {
       }
     };
   }
+
+  if (syncButton) {
+    syncButton.onclick = async () => {
+      if (!currentUser) {
+        showToast('請先登入 Google 帳號。', 'warning');
+        return;
+      }
+
+      setBusy(true);
+      if (syncStatus) syncStatus.textContent = '正在檢查雲端資料…';
+      try {
+        const data = await readCloudData();
+        cloudHasData = data !== null;
+        if (downloadButton) downloadButton.disabled = !cloudHasData;
+        if (mergeButton) mergeButton.disabled = !cloudHasData;
+        if (syncActions) syncActions.classList.remove('hidden');
+        if (syncStatus) {
+          const localWordCount = app.words.length;
+          syncStatus.textContent = cloudHasData
+            ? `本機 ${localWordCount} 個、雲端 ${data.words.length} 個單字。請選擇上傳、下載或合併。`
+            : `本機有 ${localWordCount} 個單字，雲端尚無資料。可先上傳本機資料。`;
+        }
+      } catch (error) {
+        console.error('讀取雲端資料失敗', error);
+        const message = error.code === 'permission-denied'
+          ? 'Firestore 拒絕存取，請確認已發布允許 users/{uid}/data/{doc} 的規則。'
+          : `讀取雲端資料失敗：${error.message}`;
+        if (syncStatus) syncStatus.textContent = message;
+        showToast(message, 'error');
+      } finally {
+        setBusy(false);
+      }
+    };
+  }
+
+  if (uploadButton) uploadButton.onclick = uploadLocalData;
+  if (downloadButton) downloadButton.onclick = downloadCloudData;
+  if (mergeButton) mergeButton.onclick = mergeData;
 }
 
 function applyTheme(isDark) {
