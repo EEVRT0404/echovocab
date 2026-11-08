@@ -880,7 +880,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupSettingsModal();
   setupFirebaseAuth();
   setupGlobalShortcuts();
-  renderCurrentView();
+  switchView(app.currentView);
 
   // 激勵每日金句
   renderQuote();
@@ -1235,17 +1235,38 @@ function setupNavigation() {
       switchView(target);
     });
   });
+
+  const validViews = new Set(
+    [...document.querySelectorAll('.app-view')]
+      .map(view => view.id.replace(/^view-/, ''))
+  );
+  const initialView = window.location.hash.slice(1);
+  app.currentView = validViews.has(initialView) ? initialView : 'dashboard';
+  const initialHash = `#${app.currentView}`;
+  if (window.location.hash !== initialHash) {
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}${initialHash}`);
+  }
+
+  window.addEventListener('hashchange', () => {
+    const requestedView = window.location.hash.slice(1);
+    switchView(validViews.has(requestedView) ? requestedView : 'dashboard');
+  });
 }
 
 function switchView(viewName) {
+  const viewExists = document.getElementById(`view-${viewName}`);
+  if (!viewExists) return;
+
+  const nextHash = `#${viewName}`;
+  if (window.location.hash !== nextHash) {
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}${nextHash}`);
+  }
+
   app.currentView = viewName;
   const views = document.querySelectorAll('.app-view');
   views.forEach(v => v.classList.add('hidden'));
 
-  const activeView = document.getElementById(`view-${viewName}`);
-  if (activeView) {
-    activeView.classList.remove('hidden');
-  }
+  viewExists.classList.remove('hidden');
 
   // 更新導覽列高亮
   const navBtns = document.querySelectorAll('[data-nav-target]');

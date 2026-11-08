@@ -11,6 +11,10 @@
 - 合併時以單字 ID 去重；同 ID 衝突採用雲端版本。Gemini API Key 與其他設定不會上傳。
 - 同步目前需手動執行。請先在 Firebase Authentication 啟用 Google 登入、授權網站網域，並在 Cloud Firestore 發布僅允許使用者存取 `users/{uid}/data/{doc}` 的安全規則。
 
+### 頁面網址與瀏覽紀錄
+- 頁面切換會更新網址片段，例如 `#wordbank` 或 `#flashcard`，可重新整理或分享目前頁面。
+- 切換頁面只取代目前網址紀錄，不會為每次切換新增瀏覽器上一頁紀錄。
+
 ### 1. Gemini AI 智慧擴充與自訂新增
 - **AI 智能秒級解析**：輸入一個或多個生詞、片語甚至整段句子，Gemini 自動生成：
   - 國際音標 (IPA)
